@@ -41,7 +41,7 @@ usage:
   gits commit <path...|--all>      stage changes, edit a message, and commit
   gits config [shared_path|--unset]
                                    show, enable, or disable shared mode for this repository
-  gits list                        show submodules and shared repository state
+  gits list                        show submodules and shared modules repository state
   gits <args...>                   pass through to git submodule <args...>
   gits --version                   show the installed version
 EOF
@@ -69,14 +69,14 @@ enable_shared() {
 
     path=$(canonical_directory "$requested_path") || return 1
     git -C "$root" config --local "$CONFIG_KEY" "$path" || return 1
-    printf 'shared repository enabled for this project: %s%s%s\n' "$GREEN" "$path" "$RESET"
+    printf 'shared modules repository enabled for this project: %s%s%s\n' "$GREEN" "$path" "$RESET"
 }
 
 disable_shared() {
     local root="$1"
 
     git -C "$root" config --local --unset-all "$CONFIG_KEY" 2>/dev/null || true
-    print_red "shared repository disabled for this project"
+    printf 'shared modules repository for this project: %sDisabled%s\n' "$RED" "$RESET"
 }
 
 submodule_entries() {
@@ -140,7 +140,7 @@ update_mirror() {
     mkdir -p "$(dirname "$mirror")" || return 1
     if [ -e "$mirror" ]; then
         if [ "$(git -C "$mirror" rev-parse --is-bare-repository 2>/dev/null)" != "true" ]; then
-            error "shared repository path is not a bare Git repository: $mirror"
+            error "shared modules repository path is not a bare Git repository: $mirror"
             return 1
         fi
         print_cmd "git -C $mirror remote update --prune"
@@ -219,7 +219,7 @@ shared_update() {
     local mirror_is_updated
     local -a updated_mirrors=()
 
-    printf 'using shared repository: %s%s%s\n' "$GREEN" "$base" "$RESET"
+    printf 'using shared modules repository: %s%s%s\n' "$GREEN" "$base" "$RESET"
     print_cmd "git submodule sync --recursive"
     git -C "$root" submodule sync --recursive || return 1
 
@@ -511,9 +511,9 @@ list_submodules() {
     local state
 
     if [ -n "$base" ]; then
-        printf 'shared repository: %s%s%s\n' "$GREEN" "$base" "$RESET"
+        printf 'shared modules repository: %s%s%s\n' "$GREEN" "$base" "$RESET"
     else
-        printf 'shared repository: %sdisabled%s\n' "$RED" "$RESET"
+        printf 'shared modules repository: %sdisabled%s\n' "$RED" "$RESET"
     fi
 
     if [ ! -f "$root/.gitmodules" ]; then
@@ -614,7 +614,7 @@ main() {
                     if [ -n "$base" ]; then
                         echo "$base"
                     else
-                        print_red "shared repository disabled for this project"
+                        printf 'shared modules repository for this project: %sDisabled%s\n' "$RED" "$RESET"
                     fi
                     ;;
                 *)
