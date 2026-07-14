@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.3 - 2026-07-14
+
+- 切换或关闭共享模式时清理旧 gits alternate 引用，并让顶层子模块保持在可直接开发和拉取的分支上。
+
 ## 0.2.2 - 2026-07-14
 
 - macOS 上复用系统 Git，避免安装重复的 Homebrew Git；Linuxbrew 仍按需安装 Git Formula。

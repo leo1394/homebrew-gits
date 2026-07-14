@@ -62,6 +62,8 @@ gits init ~/.cache/gits
 
 中央目录保存按 URL 区分的裸仓库；每个项目仍保留独立的子模块工作区，并通过 Git alternates 共享中央对象。这样既能复用数据，也不会用符号链接破坏 superproject 记录的子模块提交。
 
+`gits init`、`gits pull` 和 `gits reset` 会让顶层子模块保持在 `.gitmodules` 配置分支或远端默认分支，进入子模块后可直接使用 `git status`、`git pull` 和正常代码修改流程。切换共享目录时会迁移同一子模块的旧 gits alternate 引用。
+
 如果多个子模块路径指向同一个 repository URL，普通模式会分别更新和重置每个路径。共享模式下，`gits pull` 对同一中央 mirror 只 fetch 一次，随后分别更新所有引用它的工作区。如果远端分支领先于 superproject 记录的 gitlink，`git status` 会将每个已更新子模块显示为修改状态，直到提交新的 gitlink。
 
 `gits list` 会同时显示子模块路径及其在 `.gitmodules` 中声明的 URL：
@@ -83,6 +85,8 @@ gits reset                     # 取消暂存根仓库和子模块改动
 gits reset --hard              # 丢弃根仓库和子模块改动
 gits status                    # 等价于 git submodule status
 ```
+
+`gits config --unset` 会删除当前项目所有由 gits 管理的 alternate 引用，包括旧共享目录残留，但不会删除中央目录中的裸仓库，因为它们可能仍被其他项目使用。用户自行配置的其他 alternate 会保留。
 
 `gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only` 更新父仓库，然后将每个顶层子模块推进到 `submodule.<name>.branch` 配置的远端分支；未配置 branch 时使用远端默认分支。产生新的 gitlink 后，可检查改动并通过 `gits commit <path...>` 提交。
 

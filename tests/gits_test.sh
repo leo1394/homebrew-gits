@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.2"
+assert_equals "$("$GITS" --version)" "gits 0.2.3"
 assert_contains "$("$GITS" --help)" "gits init [shared_path]"
 assert_contains "$("$GITS" --help)" "gits add <args...>"
 assert_contains "$("$GITS" --help)" "gits commit <path...|--all>"
@@ -106,9 +106,25 @@ git clone -q "$TEST_ROOT/project-origin.git" "$TEST_ROOT/project-a"
 assert_equals "$(git -C "$TEST_ROOT/project-a" config --local --get gits.sharedSubmodules)" "$SHARED_BASE"
 [ -f "$TEST_ROOT/project-a/modules/shared module/content.txt" ] || fail "shared submodule was not initialized"
 assert_equals "$(find "$SHARED_BASE/repositories" -type d -name '*.git' | wc -l | tr -d ' ')" "1"
+assert_equals "$(git -C "$TEST_ROOT/project-a/modules/shared module" symbolic-ref --short -q HEAD)" "main"
+assert_equals "$(git -C "$TEST_ROOT/project-a/modules/shared module" rev-parse --abbrev-ref '@{upstream}')" "origin/main"
 
 alternate_file=$(git -C "$TEST_ROOT/project-a/modules/shared module" rev-parse --path-format=absolute --git-path objects/info/alternates)
-assert_contains "$(cat "$alternate_file")" "$SHARED_BASE/repositories/"
+current_objects=$(grep -F "$SHARED_BASE/repositories/" "$alternate_file")
+mirror_name=$(basename "$(dirname "$current_objects")")
+stale_objects="$TEST_ROOT/stale shared/repositories/$mirror_name/objects"
+user_objects="$TEST_ROOT/submodule-origin.git/objects"
+printf '%s\n%s\n%s\n' "$stale_objects" "$current_objects" "$user_objects" > "$alternate_file"
+(
+    cd "$TEST_ROOT/project-a"
+    "$GITS" init "$SHARED_BASE" >/dev/null
+)
+alternate_contents=$(cat "$alternate_file")
+assert_not_contains "$alternate_contents" "$stale_objects"
+assert_contains "$alternate_contents" "$current_objects"
+assert_contains "$alternate_contents" "$user_objects"
+submodule_status=$(git -C "$TEST_ROOT/project-a/modules/shared module" status --porcelain 2>&1)
+assert_not_contains "$submodule_status" "unable to normalize alternate object path"
 assert_equals "$(git -C "$TEST_ROOT/project-a" status --porcelain)" ""
 
 echo "updated content" >> "$TEST_ROOT/submodule-source/content.txt"
@@ -136,6 +152,7 @@ echo "dirty submodule" >> "$TEST_ROOT/project-a/modules/shared module/content.tx
     "$GITS" reset --hard >/dev/null
 )
 assert_equals "$(git -C "$TEST_ROOT/project-a" status --porcelain)" ""
+assert_equals "$(git -C "$TEST_ROOT/project-a/modules/shared module" symbolic-ref --short -q HEAD)" "main"
 
 git clone -q "$TEST_ROOT/project-origin.git" "$TEST_ROOT/project-b"
 (
@@ -147,6 +164,8 @@ if git -C "$TEST_ROOT/project-b" config --local --get gits.sharedSubmodules >/de
     fail "shared mode leaked into a project initialized without an explicit path"
 fi
 [ -f "$TEST_ROOT/project-b/modules/shared module/content.txt" ] || fail "normal submodule was not initialized"
+assert_equals "$(git -C "$TEST_ROOT/project-b/modules/shared module" symbolic-ref --short -q HEAD)" "main"
+assert_equals "$(git -C "$TEST_ROOT/project-b/modules/shared module" rev-parse --abbrev-ref '@{upstream}')" "origin/main"
 project_b_list=$(cd "$TEST_ROOT/project-b" && "$GITS" list)
 assert_contains "$project_b_list" $'shared modules repository: \033[1;31mdisabled\033[0m'
 assert_contains "$project_b_list" $'\033[1;32mmodules/shared module\033[0m : '
@@ -177,6 +196,7 @@ assert_equals "$(git -C "$TEST_ROOT/project-c/modules/shared module" rev-parse H
 assert_contains "$(git -C "$TEST_ROOT/project-c" status --porcelain)" "modules/shared module"
 assert_equals "$(find "$SHARED_BASE/repositories" -type d -name '*.git' | wc -l | tr -d ' ')" "1"
 
+printf '%s\n%s\n%s\n' "$stale_objects" "$current_objects" "$user_objects" > "$alternate_file"
 (
     cd "$TEST_ROOT/project-a"
     "$GITS" config --unset >/dev/null
@@ -184,6 +204,14 @@ assert_equals "$(find "$SHARED_BASE/repositories" -type d -name '*.git' | wc -l 
 if git -C "$TEST_ROOT/project-a" config --local --get gits.sharedSubmodules >/dev/null 2>&1; then
     fail "shared mode was not disabled"
 fi
+alternate_contents=$(cat "$alternate_file")
+assert_not_contains "$alternate_contents" "$stale_objects"
+assert_not_contains "$alternate_contents" "$current_objects"
+assert_contains "$alternate_contents" "$user_objects"
+[ -d "$(dirname "$current_objects")" ] || fail "shared mirror was deleted by config --unset"
+submodule_status=$(git -C "$TEST_ROOT/project-a/modules/shared module" status --porcelain 2>&1)
+assert_not_contains "$submodule_status" "unable to normalize alternate object path"
+git -C "$TEST_ROOT/project-a/modules/shared module" pull --ff-only >/dev/null
 
 if [ -e "$HOME/.gits-config" ]; then
     fail "legacy global configuration was created"

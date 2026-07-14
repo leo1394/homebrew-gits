@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.2"
+VERSION="0.2.3"
 CONFIG_KEY="gits.sharedSubmodules"
 RED=$'\033[1;31m'
 GREEN=$'\033[1;32m'
@@ -74,7 +74,24 @@ enable_shared() {
 
 disable_shared() {
     local root="$1"
+    local key
+    local path
+    local name
+    local url
+    local mirror
 
+    while IFS= read -r -d '' key && IFS= read -r -d '' path; do
+        [ -n "$key" ] || continue
+        git -C "$root/$path" rev-parse --git-dir >/dev/null 2>&1 || continue
+        name=${key#submodule.}
+        name=${name%.path}
+        url=$(git -C "$root" config --local --get "submodule.$name.url" 2>/dev/null)
+        [ -n "$url" ] || url=$(git config --file "$root/.gitmodules" --get "submodule.$name.url" 2>/dev/null)
+        [ -n "$url" ] || continue
+        mirror=$(mirror_path "." "$url") || return 1
+        remove_alternate "$root/$path" "$mirror" || return 1
+        attach_submodule_branch "$root" "$path" "$name" || return 1
+    done < <(submodule_entries "$root")
     git -C "$root" config --local --unset-all "$CONFIG_KEY" 2>/dev/null || true
     printf 'shared modules repository for this project: %sDisabled%s\n' "$RED" "$RESET"
 }
@@ -95,17 +112,28 @@ submodule_entries() {
 
 normal_init() {
     local root="$1"
+    local key
+    local path
+    local name
 
     print_cmd "git submodule sync --recursive"
     git -C "$root" submodule sync --recursive || return 1
     print_cmd "git submodule update --init --recursive"
-    git -C "$root" submodule update --init --recursive
+    git -C "$root" submodule update --init --recursive || return 1
+
+    while IFS= read -r -d '' key && IFS= read -r -d '' path; do
+        [ -n "$key" ] || continue
+        name=${key#submodule.}
+        name=${name%.path}
+        attach_submodule_branch "$root" "$path" "$name" || return 1
+    done < <(submodule_entries "$root")
 }
 
 normal_pull() {
     local root="$1"
     local key
     local path
+    local name
 
     print_cmd "git pull --ff-only"
     git -C "$root" pull --ff-only || return 1
@@ -114,6 +142,11 @@ normal_pull() {
 
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
         [ -n "$key" ] || continue
+        name=${key#submodule.}
+        name=${name%.path}
+        print_cmd "git submodule update --init -- $path"
+        git -C "$root" submodule update --init -- "$path" || return 1
+        attach_submodule_branch "$root" "$path" "$name" || return 1
         print_cmd "git submodule update --init --remote --merge -- $path"
         git -C "$root" submodule update --init --remote --merge -- "$path" || return 1
         print_cmd "git -C $path submodule update --init --recursive"
@@ -155,28 +188,127 @@ add_alternate() {
     local checkout="$1"
     local mirror="$2"
     local alternates
+    local alternate
+    local mirror_name
     local objects="$mirror/objects"
+    local found=false
+    local temp
 
-    alternates=$(git -C "$checkout" rev-parse --path-format=absolute --git-path objects/info/alternates) || return 1
+    alternates=$(git -C "$checkout" rev-parse --path-format=absolute --git-path objects/info/alternates 2>/dev/null) || return 1
     mkdir -p "$(dirname "$alternates")" || return 1
-    if ! grep -qxF "$objects" "$alternates" 2>/dev/null; then
-        echo "$objects" >> "$alternates" || return 1
+    mirror_name=$(basename "$mirror")
+    temp="$alternates.gits.$$"
+    : > "$temp" || return 1
+
+    if [ -f "$alternates" ]; then
+        while IFS= read -r alternate || [ -n "$alternate" ]; do
+            case "$alternate" in
+                "$objects")
+                    if [ "$found" != "true" ]; then
+                        printf '%s\n' "$alternate" >> "$temp" || return 1
+                        found=true
+                    fi
+                    ;;
+                */repositories/"$mirror_name"/objects)
+                    ;;
+                *)
+                    printf '%s\n' "$alternate" >> "$temp" || return 1
+                    ;;
+            esac
+        done < "$alternates"
+    fi
+    if [ "$found" != "true" ]; then
+        printf '%s\n' "$objects" >> "$temp" || return 1
+    fi
+    mv "$temp" "$alternates"
+}
+
+remove_alternate() {
+    local checkout="$1"
+    local mirror="$2"
+    local alternates
+    local alternate
+    local mirror_name
+    local temp
+
+    alternates=$(git -C "$checkout" rev-parse --path-format=absolute --git-path objects/info/alternates 2>/dev/null) || return 1
+    [ -f "$alternates" ] || return 0
+    mirror_name=$(basename "$mirror")
+    temp="$alternates.gits.$$"
+    : > "$temp" || return 1
+
+    while IFS= read -r alternate || [ -n "$alternate" ]; do
+        case "$alternate" in
+            */repositories/"$mirror_name"/objects)
+                ;;
+            *)
+                printf '%s\n' "$alternate" >> "$temp" || return 1
+                ;;
+        esac
+    done < "$alternates"
+
+    if [ -s "$temp" ]; then
+        mv "$temp" "$alternates"
+    else
+        rm -f "$temp" "$alternates"
     fi
 }
 
-shared_checkout_branch() {
+submodule_branch() {
     local root="$1"
     local name="$2"
-    local mirror="$3"
+    local checkout="$3"
+    local mirror="${4:-}"
     local branch
 
     branch=$(git config --file "$root/.gitmodules" --get "submodule.$name.branch" 2>/dev/null)
     if [ "$branch" = "." ]; then
         branch=$(git -C "$root" symbolic-ref --short -q HEAD)
     fi
-    [ -n "$branch" ] || branch=$(git -C "$mirror" symbolic-ref --short -q HEAD)
+    if [ -z "$branch" ] && [ -n "$mirror" ]; then
+        branch=$(git -C "$mirror" symbolic-ref --short -q HEAD)
+    fi
+    [ -n "$branch" ] || branch=$(git -C "$checkout" symbolic-ref --short -q refs/remotes/origin/HEAD)
     branch=${branch#refs/heads/}
+    branch=${branch#refs/remotes/origin/}
+    branch=${branch#origin/}
     printf '%s\n' "$branch"
+}
+
+attach_submodule_branch() {
+    local root="$1"
+    local path="$2"
+    local name="$3"
+    local mirror="${4:-}"
+    local checkout="$root/$path"
+    local branch
+
+    if git -C "$checkout" symbolic-ref --short -q HEAD >/dev/null; then
+        return 0
+    fi
+
+    branch=$(submodule_branch "$root" "$name" "$checkout" "$mirror")
+    if [ -z "$branch" ]; then
+        error "cannot determine remote branch for submodule: $path"
+        return 1
+    fi
+
+    if git -C "$checkout" show-ref --verify --quiet "refs/heads/$branch"; then
+        if git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch" &&
+            git -C "$checkout" merge-base --is-ancestor "refs/heads/$branch" "refs/remotes/origin/$branch"; then
+            print_cmd "git -C $path branch -f $branch HEAD"
+            git -C "$checkout" branch -f "$branch" HEAD || return 1
+        fi
+        print_cmd "git -C $path checkout $branch"
+        git -C "$checkout" checkout "$branch" || return 1
+    else
+        print_cmd "git -C $path checkout -b $branch"
+        git -C "$checkout" checkout -b "$branch" || return 1
+    fi
+
+    if git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+        git -C "$checkout" branch --set-upstream-to="origin/$branch" "$branch" >/dev/null || return 1
+    fi
 }
 
 update_checkout_from_mirror() {
@@ -187,7 +319,7 @@ update_checkout_from_mirror() {
     local checkout="$root/$path"
     local branch
 
-    branch=$(shared_checkout_branch "$root" "$name" "$mirror")
+    branch=$(submodule_branch "$root" "$name" "$checkout" "$mirror")
     if [ -z "$branch" ] || ! git -C "$mirror" show-ref --verify --quiet "refs/heads/$branch"; then
         error "cannot determine remote branch for submodule: $path"
         return 1
@@ -248,7 +380,8 @@ shared_update() {
             updated_mirrors+=("$mirror")
         fi
 
-        if git -C "$root/$path" rev-parse --git-dir >/dev/null 2>&1; then
+        if [ -e "$root/$path/.git" ]; then
+            add_alternate "$root/$path" "$mirror" || return 1
             if [ "$update_remote" != "true" ]; then
                 print_cmd "git submodule update --init -- $path"
                 git -C "$root" submodule update --init -- "$path" || return 1
@@ -256,14 +389,16 @@ shared_update() {
         else
             print_cmd "git submodule update --init --reference $mirror -- $path"
             git -C "$root" submodule update --init --reference "$mirror" -- "$path" || return 1
+            add_alternate "$root/$path" "$mirror" || return 1
         fi
 
         if [ "$update_remote" = "true" ]; then
             update_checkout_from_mirror "$root" "$path" "$name" "$mirror" || return 1
+        else
+            attach_submodule_branch "$root" "$path" "$name" "$mirror" || return 1
         fi
         print_cmd "git -C $path submodule update --init --recursive"
         git -C "$root/$path" submodule update --init --recursive || return 1
-        add_alternate "$root/$path" "$mirror" || return 1
     done < <(submodule_entries "$root")
 }
 
@@ -279,6 +414,9 @@ shared_pull() {
 reset_repository() {
     local root="$1"
     local mode="$2"
+    local key
+    local path
+    local name
 
     if [ -n "$mode" ] && [ "$mode" != "--hard" ]; then
         error "reset accepts only --hard"
@@ -298,6 +436,14 @@ reset_repository() {
         print_cmd "git submodule foreach --recursive git reset"
         git -C "$root" submodule foreach --recursive git reset || return 1
     fi
+
+    while IFS= read -r -d '' key && IFS= read -r -d '' path; do
+        [ -n "$key" ] || continue
+        [ -e "$root/$path/.git" ] || continue
+        name=${key#submodule.}
+        name=${name%.path}
+        attach_submodule_branch "$root" "$path" "$name" || return 1
+    done < <(submodule_entries "$root")
 
     git -C "$root" status --short
 }

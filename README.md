@@ -15,6 +15,8 @@ current project only when you explicitly provide a shared path.
 - Stores the shared-path setting in the current repository's local Git config.
 - Keeps an independent submodule checkout in every project.
 - Reuses Git objects through bare mirrors and Git alternates, without symlinks.
+- Keeps top-level submodules on their configured or remote default branch for
+  normal development commands.
 - Pulls the superproject with fast-forward-only semantics and advances each
   top-level submodule to the latest commit on its configured remote branch.
 - Stages selected paths and opens an editor with a context-aware default commit
@@ -112,10 +114,15 @@ gits config /another/shared/path
 gits config --unset
 ```
 
+`gits config --unset` removes every alternate managed by gits for the current
+project, including references to previous shared paths. It preserves unrelated
+user-managed alternates and does not delete central mirrors that other projects
+may still use.
+
 `gits list` prints each submodule path together with its URL from `.gitmodules`:
 
 ```text
-shared repository: disabled
+shared modules repository: disabled
 android : ../clobotics-camera-sdk-android
 ios : ../clobotics-camera-sdk-ios
 ```
@@ -211,7 +218,7 @@ each updated submodule as modified until you commit the new gitlinks.
 | `gits commit --all` | Stage all declared submodules, edit a message, and create a commit. |
 | `gits config` | Show the shared path configured for the current project. |
 | `gits config <shared_path>` | Enable or change shared mode for the current project. |
-| `gits config --unset` | Disable shared mode for the current project. |
+| `gits config --unset` | Disable shared mode and remove this project's gits-managed alternates. |
 | `gits list` | Show submodules and their shared-cache state. |
 | `gits status` | Pass `status` through to `git submodule`. |
 | `gits <args...>` | Pass other arguments through to `git submodule`. |

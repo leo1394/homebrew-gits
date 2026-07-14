@@ -38,10 +38,10 @@ git status --short
 
 ## 1. Prepare the version
 
-Choose the next semantic version. The examples below use `0.2.2`:
+Choose the next semantic version. The examples below use `0.2.3`:
 
 ```bash
-VERSION=0.2.2
+VERSION=0.2.3
 TAG="v${VERSION}"
 ```
 
@@ -142,7 +142,7 @@ curl -fsSL \
 Expected output for the example release:
 
 ```text
-gits 0.2.2
+gits 0.2.3
 ```
 
 ## 5. Verify the Homebrew tap
@@ -194,7 +194,10 @@ In disposable Git repositories, verify all of the following:
   submodule URL while retaining independent submodule working trees.
 - `gits pull` fast-forwards the superproject and advances top-level submodules
   to their configured remote branches.
-- `gits config --unset` disables shared mode only for the current project.
+- `gits config --unset` removes this project's gits-managed alternates without
+  deleting shared mirrors or unrelated user-managed alternates.
+- Top-level submodules remain attached to their configured or remote default
+  branches after `gits init`, `gits pull`, and `gits reset`.
 - No global `~/.gits-config` file is created.
 
 The automated test suite covers these behaviors:
