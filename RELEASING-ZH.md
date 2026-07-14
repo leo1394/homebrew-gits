@@ -12,7 +12,7 @@ brew style Formula/gits.rb
 确认 `bin/gits`、`Formula/gits.rb` 和 `CHANGELOG.md` 中的版本一致。重新计算脚本摘要，并确认与 Formula 一致：
 
 ```bash
-shasum -a 256 bin/gits
+LC_ALL=C shasum -a 256 bin/gits
 ```
 
 确认工作区只包含本次发布内容。
@@ -22,8 +22,8 @@ shasum -a 256 bin/gits
 将主分支推送至 `https://github.com/leo1394/homebrew-gits`，然后创建并推送与 Formula 一致的 tag：
 
 ```bash
-git tag -a v0.1.0 -m "gits 0.1.0"
-git push origin main v0.1.0
+git tag -a v0.2.0 -m "gits 0.2.0"
+git push origin master v0.2.0
 ```
 
 Formula 的稳定 URL 使用该 tag 下的 `bin/gits` 单文件，并用 SHA-256 锁定内容。tag 必须在安装和审计前存在。
@@ -34,6 +34,7 @@ Formula 的稳定 URL 使用该 tag 下的 `bin/gits` 单文件，并用 SHA-256
 
 ```bash
 brew tap leo1394/gits
+brew update
 brew audit --strict gits
 brew install --build-from-source gits
 brew test gits

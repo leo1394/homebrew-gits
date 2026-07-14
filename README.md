@@ -17,6 +17,8 @@ current project only when you explicitly provide a shared path.
 - Reuses Git objects through bare mirrors and Git alternates, without symlinks.
 - Pulls the superproject with fast-forward-only semantics and checks out the
   submodule commits recorded by the superproject.
+- Stages selected paths and opens an editor with a context-aware default commit
+  message.
 
 ## Requirements
 
@@ -51,6 +53,23 @@ Verify the installation:
 ```bash
 gits --version
 ```
+
+### Legacy shell alias conflict
+
+If `gits list` or `gits config` prints the `git submodule` usage text, an older
+shell alias or function is shadowing the Homebrew executable. Remove the legacy
+definition from the current shell and refresh command lookup:
+
+```bash
+unalias gits 2>/dev/null || true
+unset -f gits 2>/dev/null || true
+hash -r
+type -a gits
+```
+
+The first result should be `/opt/homebrew/bin/gits` on Apple Silicon or
+`/usr/local/bin/gits` on Intel macOS. Also remove or comment out the old `gits`
+alias in shell startup files before opening a new terminal.
 
 ## Quick start
 
@@ -93,6 +112,73 @@ gits config /another/shared/path
 gits config --unset
 ```
 
+`gits list` prints each submodule path together with its URL from `.gitmodules`:
+
+```text
+shared repository: disabled
+android : ../clobotics-camera-sdk-android
+ios : ../clobotics-camera-sdk-ios
+```
+
+Submodule paths and enabled shared-repository paths are green. The `disabled`
+state and all `gits:` error messages are red.
+
+## Stage and commit changes
+
+`gits add` retains standard Git submodule behavior and passes all arguments
+through to `git submodule add`:
+
+```bash
+gits add [-q|--quiet] [-b <branch>] [-f|--force] [--name <name>] \
+  [--reference <repository>] [--] <repository> [<path>]
+```
+
+`gits commit` stages the requested paths, opens the Git-configured editor with a
+default commit message, and creates a commit after the editor closes:
+
+```bash
+gits commit scripts
+gits commit scripts/
+gits commit scripts android
+gits commit non-submodule-directory
+gits commit .
+```
+
+A trailing slash on an exact submodule path is normalized, so
+`gits commit scripts` and `gits commit scripts/` behave the same way.
+
+Use `--all` to stage every submodule declared in `.gitmodules`:
+
+```bash
+gits commit --all
+```
+
+For a project whose submodules are `scripts`, `android`, and `ios`, this is
+equivalent to:
+
+```bash
+git add scripts android ios
+```
+
+Unlike `git add --all`, `gits commit --all` does not stage non-submodule files.
+
+If the staged commit contains only submodule entries, the editor starts with:
+
+```text
+update submodule: scripts android ios
+```
+
+If it contains any regular file or directory, the editor starts with:
+
+```text
+feat:
+```
+
+You can keep, replace, or extend the default text. The commit includes changes
+that were already staged before `gits commit`. If message editing is interrupted
+or cancelled, `gits` restores the index exactly to its pre-command state;
+working tree changes are not discarded.
+
 ## How object sharing works
 
 The shared directory contains one bare mirror for each distinct submodule URL.
@@ -105,6 +191,12 @@ preserving normal submodule isolation. It does not replace submodule directories
 with symbolic links, and it does not change the submodule commit recorded by the
 superproject.
 
+If multiple submodule paths use the same repository URL, standard mode updates
+and resets every path independently. In shared mode, `gits pull` fetches the
+central mirror only once per repository, then updates every checkout that points
+to it. A clean `git status` after the pull means all paths match the gitlink
+commits recorded by the superproject.
+
 ## Commands
 
 | Command | Description |
@@ -114,6 +206,9 @@ superproject.
 | `gits pull` | Run `git pull --ff-only`, then synchronize and update submodules. |
 | `gits reset` | Unstage changes in the superproject and initialized submodules. |
 | `gits reset --hard` | Discard tracked changes and restore recorded submodule commits. |
+| `gits add <args...>` | Pass all arguments through to `git submodule add`. |
+| `gits commit <path...>` | Stage paths, edit a default message, and create a commit. |
+| `gits commit --all` | Stage all declared submodules, edit a message, and create a commit. |
 | `gits config` | Show the shared path configured for the current project. |
 | `gits config <shared_path>` | Enable or change shared mode for the current project. |
 | `gits config --unset` | Disable shared mode for the current project. |

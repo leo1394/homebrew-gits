@@ -1,14 +1,21 @@
 #!/bin/bash
 
-VERSION="0.1.0"
+VERSION="0.2.0"
 CONFIG_KEY="gits.sharedSubmodules"
+RED=$'\033[1;31m'
+GREEN=$'\033[1;32m'
+RESET=$'\033[0m'
 
 print_cmd() {
-    printf "\033[1;32m%s\033[0m\n" "$1"
+    printf '%s%s%s\n' "$GREEN" "$1" "$RESET"
+}
+
+print_red() {
+    printf '%s%s%s\n' "$RED" "$1" "$RESET"
 }
 
 error() {
-    echo "gits: $*" >&2
+    printf '%s%s%s\n' "$RED" "gits: $*" "$RESET" >&2
     return 1
 }
 
@@ -30,6 +37,8 @@ usage:
                                    shared mode is enabled only when shared_path is given
   gits pull                        fast-forward the repository and update submodules
   gits reset [--hard]              reset the repository and its submodules
+  gits add <args...>               pass through to git submodule add
+  gits commit <path...|--all>      stage changes, edit a message, and commit
   gits config [shared_path|--unset]
                                    show, enable, or disable shared mode for this repository
   gits list                        show submodules and shared repository state
@@ -60,14 +69,14 @@ enable_shared() {
 
     path=$(canonical_directory "$requested_path") || return 1
     git -C "$root" config --local "$CONFIG_KEY" "$path" || return 1
-    echo "shared repository enabled for this project: $path"
+    printf 'shared repository enabled for this project: %s%s%s\n' "$GREEN" "$path" "$RESET"
 }
 
 disable_shared() {
     local root="$1"
 
     git -C "$root" config --local --unset-all "$CONFIG_KEY" 2>/dev/null || true
-    echo "shared repository disabled for this project"
+    print_red "shared repository disabled for this project"
 }
 
 submodule_entries() {
@@ -152,8 +161,11 @@ shared_update() {
     local name
     local url
     local mirror
+    local updated_mirror
+    local mirror_is_updated
+    local -a updated_mirrors=()
 
-    echo "using shared repository: $base"
+    printf 'using shared repository: %s%s%s\n' "$GREEN" "$base" "$RESET"
     print_cmd "git submodule sync --recursive"
     git -C "$root" submodule sync --recursive || return 1
 
@@ -170,7 +182,17 @@ shared_update() {
         fi
 
         mirror=$(mirror_path "$base" "$url") || return 1
-        update_mirror "$url" "$mirror" || return 1
+        mirror_is_updated=false
+        for updated_mirror in "${updated_mirrors[@]}"; do
+            if [ "$updated_mirror" = "$mirror" ]; then
+                mirror_is_updated=true
+                break
+            fi
+        done
+        if [ "$mirror_is_updated" != "true" ]; then
+            update_mirror "$url" "$mirror" || return 1
+            updated_mirrors+=("$mirror")
+        fi
 
         if git -C "$root/$path" rev-parse --git-dir >/dev/null 2>&1; then
             print_cmd "git submodule update --init -- $path"
@@ -190,8 +212,8 @@ shared_pull() {
     local root="$1"
     local base="$2"
 
-    print_cmd "git pull --ff-only"
-    git -C "$root" pull --ff-only || return 1
+    print_cmd "git -c fetch.recurseSubmodules=false pull --ff-only"
+    git -C "$root" -c fetch.recurseSubmodules=false pull --ff-only || return 1
     shared_update "$root" "$base"
 }
 
@@ -221,20 +243,218 @@ reset_repository() {
     git -C "$root" status --short
 }
 
+is_submodule_path() {
+    local root="$1"
+    local candidate="$2"
+    local key
+    local path
+
+    while IFS= read -r -d '' key && IFS= read -r -d '' path; do
+        [ "$path" = "$candidate" ] && return 0
+    done < <(submodule_entries "$root")
+    return 1
+}
+
+normalize_add_path() {
+    local root="$1"
+    local requested="$2"
+    local candidate="$requested"
+
+    while [ "$candidate" != "/" ] && [ "${candidate%/}" != "$candidate" ]; do
+        candidate=${candidate%/}
+    done
+
+    if is_submodule_path "$root" "$candidate"; then
+        printf '%s\n' "$candidate"
+    else
+        printf '%s\n' "$requested"
+    fi
+}
+
+restore_index() {
+    local index_path="$1"
+    local backup="$2"
+    local had_index="$3"
+
+    if [ "$had_index" = "true" ]; then
+        cp "$backup" "$index_path"
+    else
+        rm -f "$index_path"
+    fi
+}
+
+default_commit_message() {
+    local root="$1"
+    local path
+    local key
+    local submodule_path
+    local is_submodule
+    local has_non_submodule=false
+    local joined=""
+    local -a staged_paths=()
+    local -a staged_submodules=()
+
+    while IFS= read -r -d '' path; do
+        staged_paths+=("$path")
+    done < <(git -C "$root" diff --cached --name-only -z)
+
+    [ "${#staged_paths[@]}" -gt 0 ] || return 1
+
+    for path in "${staged_paths[@]}"; do
+        is_submodule=false
+        while IFS= read -r -d '' key && IFS= read -r -d '' submodule_path; do
+            if [ "$path" = "$submodule_path" ]; then
+                is_submodule=true
+                break
+            fi
+        done < <(submodule_entries "$root")
+
+        if [ "$is_submodule" != "true" ]; then
+            has_non_submodule=true
+        fi
+    done
+
+    while IFS= read -r -d '' key && IFS= read -r -d '' submodule_path; do
+        for path in "${staged_paths[@]}"; do
+            if [ "$path" = "$submodule_path" ]; then
+                staged_submodules+=("$path")
+                break
+            fi
+        done
+    done < <(submodule_entries "$root")
+
+    if [ "$has_non_submodule" = "true" ]; then
+        printf 'feat:\n'
+        return 0
+    fi
+
+    for path in "${staged_submodules[@]}"; do
+        if [ -n "$joined" ]; then
+            joined="$joined $path"
+        else
+            joined="$path"
+        fi
+    done
+    printf 'update submodule: %s\n' "$joined"
+}
+
+commit_paths() {
+    local root="$1"
+    shift
+    local index_path
+    local backup
+    local had_index=false
+    local before_tree
+    local after_tree
+    local default_message
+    local status
+    local key
+    local path
+    local requested
+    local -a paths=()
+
+    [ "$#" -gt 0 ] || {
+        error "commit requires at least one path or --all"
+        return 1
+    }
+
+    if [ "$1" = "--all" ]; then
+        [ "$#" -eq 1 ] || {
+            error "commit --all accepts no additional paths"
+            return 1
+        }
+        while IFS= read -r -d '' key && IFS= read -r -d '' path; do
+            paths+=("$path")
+        done < <(submodule_entries "$root")
+        [ "${#paths[@]}" -gt 0 ] || {
+            error "no submodules found"
+            return 1
+        }
+    else
+        for requested in "$@"; do
+            [ "${requested#-}" = "$requested" ] || {
+                error "commit supports paths or --all"
+                return 1
+            }
+            paths+=("$(normalize_add_path "$root" "$requested")")
+        done
+    fi
+
+    index_path=$(git -C "$root" rev-parse --path-format=absolute --git-path index) || return 1
+    backup=$(mktemp "${TMPDIR:-/tmp}/gits-index.XXXXXX") || return 1
+    if [ -f "$index_path" ]; then
+        cp "$index_path" "$backup" || {
+            rm -f "$backup"
+            return 1
+        }
+        had_index=true
+    fi
+    before_tree=$(git -C "$root" write-tree) || {
+        rm -f "$backup"
+        return 1
+    }
+
+    trap 'restore_index "$index_path" "$backup" "$had_index"; rm -f "$backup"; error "commit cancelled; index restored"; trap - INT TERM HUP; exit 130' INT TERM HUP
+
+    print_cmd "git add -- ${paths[*]}"
+    git -C "$root" add -- "${paths[@]}" || {
+        status=$?
+        restore_index "$index_path" "$backup" "$had_index"
+        rm -f "$backup"
+        trap - INT TERM HUP
+        return "$status"
+    }
+
+    after_tree=$(git -C "$root" write-tree) || {
+        restore_index "$index_path" "$backup" "$had_index"
+        rm -f "$backup"
+        trap - INT TERM HUP
+        return 1
+    }
+    if [ "$before_tree" = "$after_tree" ]; then
+        rm -f "$backup"
+        trap - INT TERM HUP
+        error "no changes added"
+        return 1
+    fi
+
+    default_message=$(default_commit_message "$root") || {
+        restore_index "$index_path" "$backup" "$had_index"
+        rm -f "$backup"
+        trap - INT TERM HUP
+        error "no staged changes to commit"
+        return 1
+    }
+
+    echo "default commit message: $default_message"
+    git -C "$root" commit --edit -m "$default_message" || {
+        status=$?
+        restore_index "$index_path" "$backup" "$had_index"
+        rm -f "$backup"
+        trap - INT TERM HUP
+        error "commit cancelled; index restored"
+        return "$status"
+    }
+
+    rm -f "$backup"
+    trap - INT TERM HUP
+}
+
 list_submodules() {
     local root="$1"
     local base="$2"
     local key
     local path
     local name
-    local url
+    local declared_url
+    local resolved_url
     local mirror
     local state
 
     if [ -n "$base" ]; then
-        echo "shared repository: $base"
+        printf 'shared repository: %s%s%s\n' "$GREEN" "$base" "$RESET"
     else
-        echo "shared repository: disabled"
+        printf 'shared repository: %sdisabled%s\n' "$RED" "$RESET"
     fi
 
     if [ ! -f "$root/.gitmodules" ]; then
@@ -244,17 +464,19 @@ list_submodules() {
 
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
         [ -n "$key" ] || continue
+        name=${key#submodule.}
+        name=${name%.path}
+        declared_url=$(git config --file "$root/.gitmodules" --get "submodule.$name.url")
+        printf '%s%s%s : %s' "$GREEN" "$path" "$RESET" "$declared_url"
         if [ -n "$base" ]; then
-            name=${key#submodule.}
-            name=${name%.path}
-            url=$(git -C "$root" config --local --get "submodule.$name.url" 2>/dev/null)
-            [ -n "$url" ] || url=$(git config --file "$root/.gitmodules" --get "submodule.$name.url")
-            mirror=$(mirror_path "$base" "$url") || return 1
+            resolved_url=$(git -C "$root" config --local --get "submodule.$name.url" 2>/dev/null)
+            [ -n "$resolved_url" ] || resolved_url="$declared_url"
+            mirror=$(mirror_path "$base" "$resolved_url") || return 1
             state="not cached"
             [ -d "$mirror" ] && state="cached"
-            echo "$path -> $mirror ($state)"
+            printf ' -> %s (%s)\n' "$mirror" "$state"
         else
-            echo "$path"
+            printf '\n'
         fi
     done < <(submodule_entries "$root")
 }
@@ -315,6 +537,10 @@ main() {
             }
             reset_repository "$root" "$2"
             ;;
+        commit)
+            shift
+            commit_paths "$root" "$@"
+            ;;
         config)
             [ -z "$3" ] || {
                 error "config accepts at most one argument"
@@ -329,7 +555,7 @@ main() {
                     if [ -n "$base" ]; then
                         echo "$base"
                     else
-                        echo "shared repository disabled for this project"
+                        print_red "shared repository disabled for this project"
                     fi
                     ;;
                 *)

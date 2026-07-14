@@ -21,6 +21,19 @@ Git 是必需依赖。Formula 声明了 `depends_on "git"`，因此 Homebrew 会
 brew install --HEAD gits
 ```
 
+### 旧 shell alias 冲突
+
+如果 `gits list` 或 `gits config` 输出 `git submodule` 的 usage，说明旧版 shell alias 或 function 覆盖了 Homebrew 可执行文件。可在当前终端执行：
+
+```bash
+unalias gits 2>/dev/null || true
+unset -f gits 2>/dev/null || true
+hash -r
+type -a gits
+```
+
+Apple Silicon Mac 的第一条结果应为 `/opt/homebrew/bin/gits`，Intel Mac 应为 `/usr/local/bin/gits`。同时应从 shell 启动文件中删除或注释旧的 `gits` alias，再打开新终端。
+
 ## 使用
 
 普通子模块流程不会启用共享模式：
@@ -49,6 +62,18 @@ gits init ~/.cache/gits
 
 中央目录保存按 URL 区分的裸仓库；每个项目仍保留独立的子模块工作区，并通过 Git alternates 共享中央对象。这样既能复用数据，也不会用符号链接破坏 superproject 记录的子模块提交。
 
+如果多个子模块路径指向同一个 repository URL，普通模式会分别更新和重置每个路径。共享模式下，`gits pull` 对同一中央 mirror 只 fetch 一次，随后分别更新所有引用它的工作区。拉取后 `git status` 干净表示所有路径都已匹配 superproject 记录的 gitlink commit。
+
+`gits list` 会同时显示子模块路径及其在 `.gitmodules` 中声明的 URL：
+
+```text
+shared repository: disabled
+android : ../clobotics-camera-sdk-android
+ios : ../clobotics-camera-sdk-ios
+```
+
+子模块路径和已启用的共享仓库路径显示为绿色；`disabled` 状态及所有 `gits:` 错误信息显示为红色。
+
 ```bash
 gits config                    # 查看当前项目配置
 gits config ~/.cache/gits      # 为当前项目启用或更换中央目录
@@ -61,6 +86,55 @@ gits status                    # 等价于 git submodule status
 
 `gits pull` 使用 `git pull --ff-only`，随后将子模块更新到 superproject 记录的提交，不会擅自把子模块推进到远端分支最新提交。
 
+## 添加并提交改动
+
+`gits add` 保留标准 Git 子模块语义，将所有参数完整透传给 `git submodule add`：
+
+```bash
+gits add [-q|--quiet] [-b <branch>] [-f|--force] [--name <name>] \
+  [--reference <repository>] [--] <repository> [<path>]
+```
+
+`gits commit` 会先暂存指定路径，然后打开 Git 配置的编辑器并预填提交信息；编辑器正常关闭后创建 commit：
+
+```bash
+gits commit scripts
+gits commit scripts/
+gits commit scripts android
+gits commit non-submodule-directory
+gits commit .
+```
+
+子模块路径末尾的 `/` 会被规范化，因此 `gits commit scripts` 与 `gits commit scripts/` 等效。
+
+`--all` 仅暂存 `.gitmodules` 中声明的全部子模块：
+
+```bash
+gits commit --all
+```
+
+如果项目包含 `scripts`、`android` 和 `ios` 三个子模块，该命令等效于：
+
+```bash
+git add scripts android ios
+```
+
+`gits commit --all` 与 `git add --all` 不同，不会自动暂存普通文件。
+
+如果本次 commit 仅包含子模块，默认提交信息为：
+
+```text
+update submodule: scripts android ios
+```
+
+如果包含任何普通文件或目录，默认提交信息为：
+
+```text
+feat:
+```
+
+用户可以保留、替换或补充默认内容。commit 也会包含执行 `gits commit` 前已经暂存的改动。如果提交信息编辑被中断或取消，`gits` 会将暂存区完整恢复到命令执行前的状态，不会丢弃工作区改动。
+
 ## 开发与发布
 
 ```bash
@@ -70,7 +144,7 @@ brew style Formula/gits.rb
 brew audit --strict gits
 ```
 
-版本号同时维护在 `bin/gits`、`Formula/gits.rb` 和 `CHANGELOG.md`。Formula 固定下载 `v0.1.0` tag 下的脚本并校验 SHA-256，完整发布顺序和验收命令见 [`RELEASING-ZH.md`](RELEASING-ZH.md)。
+版本号同时维护在 `bin/gits`、`Formula/gits.rb` 和 `CHANGELOG.md`。Formula 固定下载版本 tag 下的脚本并校验 SHA-256，完整发布顺序和验收命令见 [`RELEASING-ZH.md`](RELEASING-ZH.md)。
 
 ## License
 
