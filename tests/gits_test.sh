@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.0"
+assert_equals "$("$GITS" --version)" "gits 0.2.1"
 assert_contains "$("$GITS" --help)" "gits init [shared_path]"
 assert_contains "$("$GITS" --help)" "gits add <args...>"
 assert_contains "$("$GITS" --help)" "gits commit <path...|--all>"
@@ -152,11 +152,29 @@ assert_contains "$project_b_list" $'shared repository: \033[1;31mdisabled\033[0m
 assert_contains "$project_b_list" $'\033[1;32mmodules/shared module\033[0m : '
 assert_contains "$project_b_list" "$TEST_ROOT/submodule-origin.git"
 
+echo "remote-only update" >> "$TEST_ROOT/submodule-source/content.txt"
+git -C "$TEST_ROOT/submodule-source" commit -qam "remote-only update"
+git -C "$TEST_ROOT/submodule-source" push -q origin main
+remote_only_commit=$(git -C "$TEST_ROOT/submodule-source" rev-parse HEAD)
+(
+    cd "$TEST_ROOT/project-b"
+    "$GITS" pull >/dev/null
+)
+assert_equals "$(git -C "$TEST_ROOT/project-b/modules/shared module" rev-parse HEAD)" "$remote_only_commit"
+assert_contains "$(git -C "$TEST_ROOT/project-b" status --porcelain)" "modules/shared module"
+
 git clone -q "$TEST_ROOT/project-origin.git" "$TEST_ROOT/project-c"
 (
     cd "$TEST_ROOT/project-c"
     "$GITS" init "$SHARED_BASE" >/dev/null
 )
+assert_equals "$(git -C "$TEST_ROOT/project-c/modules/shared module" rev-parse HEAD)" "$(git -C "$TEST_ROOT/project-c" rev-parse 'HEAD:modules/shared module')"
+(
+    cd "$TEST_ROOT/project-c"
+    "$GITS" pull >/dev/null
+)
+assert_equals "$(git -C "$TEST_ROOT/project-c/modules/shared module" rev-parse HEAD)" "$remote_only_commit"
+assert_contains "$(git -C "$TEST_ROOT/project-c" status --porcelain)" "modules/shared module"
 assert_equals "$(find "$SHARED_BASE/repositories" -type d -name '*.git' | wc -l | tr -d ' ')" "1"
 
 (

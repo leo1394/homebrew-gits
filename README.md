@@ -15,8 +15,8 @@ current project only when you explicitly provide a shared path.
 - Stores the shared-path setting in the current repository's local Git config.
 - Keeps an independent submodule checkout in every project.
 - Reuses Git objects through bare mirrors and Git alternates, without symlinks.
-- Pulls the superproject with fast-forward-only semantics and checks out the
-  submodule commits recorded by the superproject.
+- Pulls the superproject with fast-forward-only semantics and advances each
+  top-level submodule to the latest commit on its configured remote branch.
 - Stages selected paths and opens an editor with a context-aware default commit
   message.
 
@@ -188,14 +188,14 @@ through Git alternates.
 
 This design reduces repeated network transfers and object storage while
 preserving normal submodule isolation. It does not replace submodule directories
-with symbolic links, and it does not change the submodule commit recorded by the
-superproject.
+with symbolic links, and it does not automatically stage the resulting gitlink
+changes in the superproject.
 
 If multiple submodule paths use the same repository URL, standard mode updates
 and resets every path independently. In shared mode, `gits pull` fetches the
 central mirror only once per repository, then updates every checkout that points
-to it. A clean `git status` after the pull means all paths match the gitlink
-commits recorded by the superproject.
+to it. If the remote branch is ahead of the recorded gitlink, `git status` shows
+each updated submodule as modified until you commit the new gitlinks.
 
 ## Commands
 
@@ -203,7 +203,7 @@ commits recorded by the superproject.
 | --- | --- |
 | `gits init` | Synchronize and initialize submodules without enabling shared mode. |
 | `gits init <shared_path>` | Enable shared mode for this project, then initialize submodules. |
-| `gits pull` | Run `git pull --ff-only`, then synchronize and update submodules. |
+| `gits pull` | Fast-forward the superproject, then advance submodules to their remote branches. |
 | `gits reset` | Unstage changes in the superproject and initialized submodules. |
 | `gits reset --hard` | Discard tracked changes and restore recorded submodule commits. |
 | `gits add <args...>` | Pass all arguments through to `git submodule add`. |
@@ -217,9 +217,11 @@ commits recorded by the superproject.
 | `gits <args...>` | Pass other arguments through to `git submodule`. |
 | `gits --version` | Print the installed version. |
 
-`gits pull` deliberately updates each submodule to the commit recorded by the
-superproject. It does not advance submodules to the latest commit on their remote
-branches.
+`gits init` checks out the commits recorded by the superproject. `gits pull`
+instead advances each top-level submodule to the branch configured by
+`submodule.<name>.branch`, or to the remote default branch when no branch is
+configured. When this produces new gitlink values, review them and commit them
+with `gits commit <path...>`.
 
 Use `gits reset --hard` carefully: it discards tracked changes in both the
 superproject and initialized submodules.

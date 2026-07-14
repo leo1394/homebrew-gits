@@ -22,8 +22,8 @@ LC_ALL=C shasum -a 256 bin/gits
 将主分支推送至 `https://github.com/leo1394/homebrew-gits`，然后创建并推送与 Formula 一致的 tag：
 
 ```bash
-git tag -a v0.2.0 -m "gits 0.2.0"
-git push origin master v0.2.0
+git tag -a v0.2.1 -m "gits 0.2.1"
+git push origin master v0.2.1
 ```
 
 Formula 的稳定 URL 使用该 tag 下的 `bin/gits` 单文件，并用 SHA-256 锁定内容。tag 必须在安装和审计前存在。
