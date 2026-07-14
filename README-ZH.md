@@ -13,7 +13,7 @@ brew install gits
 
 tap 只需添加一次，后续安装、升级和重装都可以直接使用 `gits`。
 
-Git 是必需依赖。Formula 声明了 `depends_on "git"`，因此 Homebrew 会在需要时先安装 Git，再安装 `gits`。
+Git 是必需依赖。macOS 上 Formula 使用系统提供的 Git，不会重复安装 Homebrew Git；Linux 上 Homebrew 会在需要时安装 Git Formula。
 
 主分支推送后、正式 tag 发布前，可以安装 HEAD 版本：
 

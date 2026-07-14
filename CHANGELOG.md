@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 - 2026-07-14
+
+- macOS 上复用系统 Git，避免安装重复的 Homebrew Git；Linuxbrew 仍按需安装 Git Formula。
+- 统一共享子模块仓库相关输出文案和终端显示样式。
+
 ## 0.2.1 - 2026-07-14
 
 - `gits pull` 将顶层子模块推进到配置的远端分支最新提交，而不是停留在父仓库记录的旧 gitlink。

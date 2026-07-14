@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.1"
+VERSION="0.2.2"
 CONFIG_KEY="gits.sharedSubmodules"
 RED=$'\033[1;31m'
 GREEN=$'\033[1;32m'

@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.1"
+assert_equals "$("$GITS" --version)" "gits 0.2.2"
 assert_contains "$("$GITS" --help)" "gits init [shared_path]"
 assert_contains "$("$GITS" --help)" "gits add <args...>"
 assert_contains "$("$GITS" --help)" "gits commit <path...|--all>"
@@ -148,7 +148,7 @@ if git -C "$TEST_ROOT/project-b" config --local --get gits.sharedSubmodules >/de
 fi
 [ -f "$TEST_ROOT/project-b/modules/shared module/content.txt" ] || fail "normal submodule was not initialized"
 project_b_list=$(cd "$TEST_ROOT/project-b" && "$GITS" list)
-assert_contains "$project_b_list" $'shared repository: \033[1;31mdisabled\033[0m'
+assert_contains "$project_b_list" $'shared modules repository: \033[1;31mdisabled\033[0m'
 assert_contains "$project_b_list" $'\033[1;32mmodules/shared module\033[0m : '
 assert_contains "$project_b_list" "$TEST_ROOT/submodule-origin.git"
 

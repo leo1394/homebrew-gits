@@ -22,8 +22,8 @@ LC_ALL=C shasum -a 256 bin/gits
 将主分支推送至 `https://github.com/leo1394/homebrew-gits`，然后创建并推送与 Formula 一致的 tag：
 
 ```bash
-git tag -a v0.2.1 -m "gits 0.2.1"
-git push origin master v0.2.1
+git tag -a v0.2.2 -m "gits 0.2.2"
+git push origin master v0.2.2
 ```
 
 Formula 的稳定 URL 使用该 tag 下的 `bin/gits` 单文件，并用 SHA-256 锁定内容。tag 必须在安装和审计前存在。
@@ -43,7 +43,8 @@ gits --version
 
 ## 4. 发布检查
 
-- 在全新环境安装，确认 Formula 在缺少 Homebrew Git formula 时先安装 `git` 依赖。
+- 在 macOS 全新环境安装，确认 Formula 复用系统 Git，不会额外安装 Homebrew Git。
+- 在 Linuxbrew 环境安装，确认 Formula 在需要时安装 Git Formula。
 - 在未传路径的项目执行 `gits init`，确认 `gits.sharedSubmodules` 不存在。
 - 执行 `gits init <shared_path>`，确认配置仅写入当前项目的 `.git/config`。
 - 用两个项目复用同一 `<shared_path>`，确认中央目录只有一份对应裸仓库，并且两个项目的子模块工作区相互独立。

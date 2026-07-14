@@ -26,8 +26,8 @@ current project only when you explicitly provide a shared path.
 - Bash
 - Git 2.31 or later
 
-The Homebrew formula declares Git as a dependency. If the Homebrew Git formula
-is not already installed, Homebrew installs it before `gits`.
+The Homebrew formula uses the Git provided by macOS. On Linux, Homebrew installs
+its Git formula when needed.
 
 ## Installation
 

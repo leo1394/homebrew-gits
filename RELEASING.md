@@ -38,18 +38,18 @@ git status --short
 
 ## 1. Prepare the version
 
-Choose the next semantic version. The examples below use `0.2.1`:
+Choose the next semantic version. The examples below use `0.2.2`:
 
 ```bash
-VERSION=0.2.1
+VERSION=0.2.2
 TAG="v${VERSION}"
 ```
 
 Update all version-specific locations:
 
-1. Set `VERSION` in `bin/gits`.
+1. Set `VERSION` in `bin/gits` and `VERSION.txt`.
 2. Change the tag in the stable URL in `Formula/gits.rb`.
-3. Update the expected version in the formula test.
+3. Update the expected version in the formula test and shell tests.
 4. Add the release notes and date to `CHANGELOG.md`.
 
 Do not add an explicit `version` line to the formula. The tagged URL provides
@@ -103,7 +103,7 @@ Only the intended release files should be changed.
 Commit the prepared release:
 
 ```bash
-git add bin/gits Formula/gits.rb CHANGELOG.md
+git add bin/gits VERSION.txt Formula/gits.rb tests/gits_test.sh CHANGELOG.md
 git commit -m "Release gits ${VERSION}"
 git push origin master
 ```
@@ -142,7 +142,7 @@ curl -fsSL \
 Expected output for the example release:
 
 ```text
-gits 0.2.1
+gits 0.2.2
 ```
 
 ## 5. Verify the Homebrew tap
@@ -179,7 +179,8 @@ brew info gits
 brew deps gits
 ```
 
-The dependency list must include `git`.
+On macOS, the dependency list should not include Homebrew Git. On Linux,
+Homebrew should resolve Git as a dependency through `uses_from_macos`.
 
 ## 6. Run functional acceptance checks
 
