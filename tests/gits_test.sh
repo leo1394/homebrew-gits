@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.3"
+assert_equals "$("$GITS" --version)" "gits 0.2.4"
 assert_contains "$("$GITS" --help)" "gits init [shared_path]"
 assert_contains "$("$GITS" --help)" "gits add <args...>"
 assert_contains "$("$GITS" --help)" "gits commit <path...|--all>"
@@ -225,6 +225,7 @@ echo "duplicate content" > "$TEST_ROOT/duplicate-build-source/content.txt"
 git -C "$TEST_ROOT/duplicate-build-source" add content.txt
 git -C "$TEST_ROOT/duplicate-build-source" commit -qm "initial duplicate submodule"
 git clone -q --bare "$TEST_ROOT/duplicate-build-source" "$DUPLICATE_REMOTES/build-scripts"
+ln -s build-scripts "$DUPLICATE_REMOTES/build-scripts.git"
 git -C "$TEST_ROOT/duplicate-build-source" remote add origin "$DUPLICATE_REMOTES/build-scripts"
 
 mkdir "$TEST_ROOT/duplicate-store-source"
@@ -233,16 +234,16 @@ echo "store layout" > "$TEST_ROOT/duplicate-store-source/README.md"
 git -C "$TEST_ROOT/duplicate-store-source" add README.md
 git -C "$TEST_ROOT/duplicate-store-source" commit -qm "initial store layout"
 git -C "$TEST_ROOT/duplicate-store-source" submodule add -q "$DUPLICATE_REMOTES/build-scripts" apps/main_app/scripts
-git -C "$TEST_ROOT/duplicate-store-source" submodule add -q "$DUPLICATE_REMOTES/build-scripts" apps/companion_app/scripts
+git -C "$TEST_ROOT/duplicate-store-source" submodule add -q "$DUPLICATE_REMOTES/build-scripts.git" apps/companion_app/scripts
 git config --file "$TEST_ROOT/duplicate-store-source/.gitmodules" submodule.apps/main_app/scripts.url ../build-scripts
-git config --file "$TEST_ROOT/duplicate-store-source/.gitmodules" submodule.apps/companion_app/scripts.url ../build-scripts
+git config --file "$TEST_ROOT/duplicate-store-source/.gitmodules" submodule.apps/companion_app/scripts.url ../build-scripts.git
 git -C "$TEST_ROOT/duplicate-store-source" add .gitmodules apps
 git -C "$TEST_ROOT/duplicate-store-source" commit -qm "add duplicate submodule paths"
 git clone -q --bare "$TEST_ROOT/duplicate-store-source" "$DUPLICATE_REMOTES/store-layout"
 git -C "$TEST_ROOT/duplicate-store-source" remote add origin "$DUPLICATE_REMOTES/store-layout"
 
 assert_equals "$(git config --file "$TEST_ROOT/duplicate-store-source/.gitmodules" --get submodule.apps/main_app/scripts.url)" "../build-scripts"
-assert_equals "$(git config --file "$TEST_ROOT/duplicate-store-source/.gitmodules" --get submodule.apps/companion_app/scripts.url)" "../build-scripts"
+assert_equals "$(git config --file "$TEST_ROOT/duplicate-store-source/.gitmodules" --get submodule.apps/companion_app/scripts.url)" "../build-scripts.git"
 
 git clone -q "$DUPLICATE_REMOTES/store-layout" "$TEST_ROOT/duplicate-normal"
 (
@@ -290,7 +291,20 @@ assert_equals "$(find "$DUPLICATE_SHARED/repositories" -type d -name '*.git' | w
 
 main_url=$(git -C "$TEST_ROOT/duplicate-shared-project" config --local --get submodule.apps/main_app/scripts.url)
 companion_url=$(git -C "$TEST_ROOT/duplicate-shared-project" config --local --get submodule.apps/companion_app/scripts.url)
-assert_equals "$main_url" "$companion_url"
+assert_not_contains "$main_url" ".git"
+assert_contains "$companion_url" ".git"
+
+main_alternate=$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" rev-parse --path-format=absolute --git-path objects/info/alternates)
+companion_alternate=$(git -C "$TEST_ROOT/duplicate-shared-project/apps/companion_app/scripts" rev-parse --path-format=absolute --git-path objects/info/alternates)
+canonical_objects=$(cat "$main_alternate")
+legacy_hash=$(printf '%s' "$companion_url" | git hash-object --stdin)
+legacy_objects="$DUPLICATE_SHARED/repositories/build-scripts-${legacy_hash:0:12}.git/objects"
+printf '%s\n%s\n' "$canonical_objects" "$legacy_objects" > "$companion_alternate"
+(
+    cd "$TEST_ROOT/duplicate-shared-project"
+    "$GITS" init "$DUPLICATE_SHARED" >/dev/null
+)
+assert_equals "$(cat "$companion_alternate")" "$canonical_objects"
 
 echo "shared pull update" >> "$TEST_ROOT/duplicate-build-source/content.txt"
 git -C "$TEST_ROOT/duplicate-build-source" commit -qam "shared pull update"
@@ -311,8 +325,6 @@ assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-shared-project" apps/m
 assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-shared-project" apps/companion_app/scripts
 assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project" status --porcelain)" ""
 
-main_alternate=$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" rev-parse --path-format=absolute --git-path objects/info/alternates)
-companion_alternate=$(git -C "$TEST_ROOT/duplicate-shared-project/apps/companion_app/scripts" rev-parse --path-format=absolute --git-path objects/info/alternates)
 assert_equals "$(cat "$main_alternate")" "$(cat "$companion_alternate")"
 
 EDITOR_ACCEPT="$TEST_ROOT/editor-accept"

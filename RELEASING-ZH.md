@@ -22,8 +22,8 @@ LC_ALL=C shasum -a 256 bin/gits
 将主分支推送至 `https://github.com/leo1394/homebrew-gits`，然后创建并推送与 Formula 一致的 tag：
 
 ```bash
-git tag -a v0.2.3 -m "gits 0.2.3"
-git push origin master v0.2.3
+git tag -a v0.2.4 -m "gits 0.2.4"
+git push origin master v0.2.4
 ```
 
 Formula 的稳定 URL 使用该 tag 下的 `bin/gits` 单文件，并用 SHA-256 锁定内容。tag 必须在安装和审计前存在。
@@ -50,3 +50,4 @@ gits --version
 - 执行 `gits config --unset`，确认清除当前项目的新旧 gits alternate，保留中央 mirror 和用户自定义 alternate。
 - 确认 `gits init`、`gits pull` 和 `gits reset` 后顶层子模块位于配置分支或远端默认分支。
 - 用两个项目复用同一 `<shared_path>`，确认中央目录只有一份对应裸仓库，并且两个项目的子模块工作区相互独立。
+- 确认仅尾部 `.git` 不同的两个 URL 复用同一 mirror，并清理 checkout 中旧版 alternate 引用。

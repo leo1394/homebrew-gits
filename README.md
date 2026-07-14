@@ -193,6 +193,9 @@ Each project still has its own submodule working tree at the path recorded in
 `.gitmodules`. The submodule checkout references the mirror's object database
 through Git alternates.
 
+URLs that differ only by a trailing `.git` suffix use the same mirror. For
+example, `../fe-system-docs` and `../fe-system-docs.git` share one object store.
+
 This design reduces repeated network transfers and object storage while
 preserving normal submodule isolation. It does not replace submodule directories
 with symbolic links, and it does not automatically stage the resulting gitlink

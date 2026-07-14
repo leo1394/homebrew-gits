@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.3"
+VERSION="0.2.4"
 CONFIG_KEY="gits.sharedSubmodules"
 RED=$'\033[1;31m'
 GREEN=$'\033[1;32m'
@@ -79,6 +79,7 @@ disable_shared() {
     local name
     local url
     local mirror
+    local legacy_mirror
 
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
         [ -n "$key" ] || continue
@@ -89,7 +90,8 @@ disable_shared() {
         [ -n "$url" ] || url=$(git config --file "$root/.gitmodules" --get "submodule.$name.url" 2>/dev/null)
         [ -n "$url" ] || continue
         mirror=$(mirror_path "." "$url") || return 1
-        remove_alternate "$root/$path" "$mirror" || return 1
+        legacy_mirror=$(legacy_mirror_path "." "$url") || return 1
+        remove_alternate "$root/$path" "$mirror" "$legacy_mirror" || return 1
         attach_submodule_branch "$root" "$path" "$name" || return 1
     done < <(submodule_entries "$root")
     git -C "$root" config --local --unset-all "$CONFIG_KEY" 2>/dev/null || true
@@ -154,16 +156,40 @@ normal_pull() {
     done < <(submodule_entries "$root")
 }
 
-mirror_path() {
+mirror_url_key() {
+    local url="$1"
+
+    printf '%s\n' "${url%.git}"
+}
+
+mirror_path_for_key() {
     local base="$1"
-    local url="$2"
+    local key="$2"
     local hash
     local slug
 
-    hash=$(printf '%s' "$url" | git hash-object --stdin) || return 1
-    slug=$(basename "${url%.git}")
+    hash=$(printf '%s' "$key" | git hash-object --stdin) || return 1
+    slug=$(basename "${key%.git}")
     slug=$(printf '%s' "$slug" | tr -c '[:alnum:]._- ' '_' | tr ' ' '_')
     printf '%s/repositories/%s-%s.git\n' "$base" "$slug" "${hash:0:12}"
+}
+
+mirror_path() {
+    local base="$1"
+    local url="$2"
+    local key
+
+    key=$(mirror_url_key "$url") || return 1
+    mirror_path_for_key "$base" "$key"
+}
+
+legacy_mirror_path() {
+    local base="$1"
+    local url="$2"
+    local key
+
+    key=$(mirror_url_key "$url") || return 1
+    mirror_path_for_key "$base" "$key.git"
 }
 
 update_mirror() {
@@ -187,9 +213,11 @@ update_mirror() {
 add_alternate() {
     local checkout="$1"
     local mirror="$2"
+    local legacy_mirror="${3:-$mirror}"
     local alternates
     local alternate
     local mirror_name
+    local legacy_mirror_name
     local objects="$mirror/objects"
     local found=false
     local temp
@@ -197,6 +225,7 @@ add_alternate() {
     alternates=$(git -C "$checkout" rev-parse --path-format=absolute --git-path objects/info/alternates 2>/dev/null) || return 1
     mkdir -p "$(dirname "$alternates")" || return 1
     mirror_name=$(basename "$mirror")
+    legacy_mirror_name=$(basename "$legacy_mirror")
     temp="$alternates.gits.$$"
     : > "$temp" || return 1
 
@@ -209,7 +238,7 @@ add_alternate() {
                         found=true
                     fi
                     ;;
-                */repositories/"$mirror_name"/objects)
+                */repositories/"$mirror_name"/objects|*/repositories/"$legacy_mirror_name"/objects)
                     ;;
                 *)
                     printf '%s\n' "$alternate" >> "$temp" || return 1
@@ -226,20 +255,23 @@ add_alternate() {
 remove_alternate() {
     local checkout="$1"
     local mirror="$2"
+    local legacy_mirror="${3:-$mirror}"
     local alternates
     local alternate
     local mirror_name
+    local legacy_mirror_name
     local temp
 
     alternates=$(git -C "$checkout" rev-parse --path-format=absolute --git-path objects/info/alternates 2>/dev/null) || return 1
     [ -f "$alternates" ] || return 0
     mirror_name=$(basename "$mirror")
+    legacy_mirror_name=$(basename "$legacy_mirror")
     temp="$alternates.gits.$$"
     : > "$temp" || return 1
 
     while IFS= read -r alternate || [ -n "$alternate" ]; do
         case "$alternate" in
-            */repositories/"$mirror_name"/objects)
+            */repositories/"$mirror_name"/objects|*/repositories/"$legacy_mirror_name"/objects)
                 ;;
             *)
                 printf '%s\n' "$alternate" >> "$temp" || return 1
@@ -347,6 +379,7 @@ shared_update() {
     local name
     local url
     local mirror
+    local legacy_mirror
     local updated_mirror
     local mirror_is_updated
     local -a updated_mirrors=()
@@ -368,6 +401,7 @@ shared_update() {
         fi
 
         mirror=$(mirror_path "$base" "$url") || return 1
+        legacy_mirror=$(legacy_mirror_path "$base" "$url") || return 1
         mirror_is_updated=false
         for updated_mirror in "${updated_mirrors[@]}"; do
             if [ "$updated_mirror" = "$mirror" ]; then
@@ -381,7 +415,7 @@ shared_update() {
         fi
 
         if [ -e "$root/$path/.git" ]; then
-            add_alternate "$root/$path" "$mirror" || return 1
+            add_alternate "$root/$path" "$mirror" "$legacy_mirror" || return 1
             if [ "$update_remote" != "true" ]; then
                 print_cmd "git submodule update --init -- $path"
                 git -C "$root" submodule update --init -- "$path" || return 1
@@ -389,7 +423,7 @@ shared_update() {
         else
             print_cmd "git submodule update --init --reference $mirror -- $path"
             git -C "$root" submodule update --init --reference "$mirror" -- "$path" || return 1
-            add_alternate "$root/$path" "$mirror" || return 1
+            add_alternate "$root/$path" "$mirror" "$legacy_mirror" || return 1
         fi
 
         if [ "$update_remote" = "true" ]; then

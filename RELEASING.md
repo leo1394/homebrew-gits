@@ -38,10 +38,10 @@ git status --short
 
 ## 1. Prepare the version
 
-Choose the next semantic version. The examples below use `0.2.3`:
+Choose the next semantic version. The examples below use `0.2.4`:
 
 ```bash
-VERSION=0.2.3
+VERSION=0.2.4
 TAG="v${VERSION}"
 ```
 
@@ -142,7 +142,7 @@ curl -fsSL \
 Expected output for the example release:
 
 ```text
-gits 0.2.3
+gits 0.2.4
 ```
 
 ## 5. Verify the Homebrew tap
@@ -192,6 +192,8 @@ In disposable Git repositories, verify all of the following:
   repository's `.git/config`.
 - Two projects using the same shared path reuse one bare mirror for the same
   submodule URL while retaining independent submodule working trees.
+- Submodule URLs that differ only by a trailing `.git` suffix reuse the same
+  mirror and migrate legacy alternate references.
 - `gits pull` fast-forwards the superproject and advances top-level submodules
   to their configured remote branches.
 - `gits config --unset` removes this project's gits-managed alternates without

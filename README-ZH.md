@@ -62,6 +62,8 @@ gits init ~/.cache/gits
 
 中央目录保存按 URL 区分的裸仓库；每个项目仍保留独立的子模块工作区，并通过 Git alternates 共享中央对象。这样既能复用数据，也不会用符号链接破坏 superproject 记录的子模块提交。
 
+仅尾部 `.git` 不同的 URL 会复用同一个 mirror，例如 `../fe-system-docs` 与 `../fe-system-docs.git`。升级后再次执行 `gits init` 或 `gits pull` 会将 checkout 从旧版 raw-URL alternate 迁移到统一 mirror。
+
 `gits init`、`gits pull` 和 `gits reset` 会让顶层子模块保持在 `.gitmodules` 配置分支或远端默认分支，进入子模块后可直接使用 `git status`、`git pull` 和正常代码修改流程。切换共享目录时会迁移同一子模块的旧 gits alternate 引用。
 
 如果多个子模块路径指向同一个 repository URL，普通模式会分别更新和重置每个路径。共享模式下，`gits pull` 对同一中央 mirror 只 fetch 一次，随后分别更新所有引用它的工作区。如果远端分支领先于 superproject 记录的 gitlink，`git status` 会将每个已更新子模块显示为修改状态，直到提交新的 gitlink。
