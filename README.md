@@ -1,29 +1,63 @@
 # gits
 
-`gits` 是面向 Git 子模块的轻量命令行工作流。它遵循标准子模块语义，并可让多个项目复用一个中央裸仓库缓存，减少重复下载和对象存储。
+`gits` is a lightweight Git submodule workflow with optional, project-scoped
+object sharing. It keeps standard Git submodule behavior while allowing multiple
+projects to reuse a central cache of bare repositories.
 
-## 安装
+Shared mode is never enabled globally or implicitly. It is enabled for the
+current project only when you explicitly provide a shared path.
 
-先添加 `leo1394/gits` tap，再按普通 Formula 名称安装：
+## Features
+
+- Initializes and updates standard Git submodules.
+- Enables a central shared repository cache only for explicitly configured
+  projects.
+- Stores the shared-path setting in the current repository's local Git config.
+- Keeps an independent submodule checkout in every project.
+- Reuses Git objects through bare mirrors and Git alternates, without symlinks.
+- Pulls the superproject with fast-forward-only semantics and checks out the
+  submodule commits recorded by the superproject.
+
+## Requirements
+
+- macOS or Linux with Homebrew
+- Bash
+- Git 2.31 or later
+
+The Homebrew formula declares Git as a dependency. If the Homebrew Git formula
+is not already installed, Homebrew installs it before `gits`.
+
+## Installation
+
+Add the tap once, then install the formula by its short name:
 
 ```bash
 brew tap leo1394/gits
 brew install gits
 ```
 
-tap 只需添加一次，后续安装、升级和重装都可以直接使用 `gits`。
+The fully qualified formula name is `leo1394/gits/gits`, but it is not needed
+after the tap has been added.
 
-Git 是必需依赖。Formula 声明了 `depends_on "git"`，因此 Homebrew 会在需要时先安装 Git，再安装 `gits`。
-
-主分支推送后、正式 tag 发布前，可以安装 HEAD 版本：
+To upgrade or remove `gits`:
 
 ```bash
-brew install --HEAD gits
+brew upgrade gits
+brew uninstall gits
 ```
 
-## 使用
+Verify the installation:
 
-普通子模块流程不会启用共享模式：
+```bash
+gits --version
+```
+
+## Quick start
+
+### Standard submodule mode
+
+Run `init` without a path to use normal Git submodule behavior. This does not
+enable shared mode:
 
 ```bash
 cd /path/to/project
@@ -31,47 +65,84 @@ gits init
 gits pull
 ```
 
-只有在当前项目中明确传入中央目录时，才会为该项目启用共享模式：
+### Project-scoped shared mode
+
+Pass a directory explicitly to enable shared mode for the current project:
 
 ```bash
 cd /path/to/project
 gits init ~/.cache/gits
 ```
 
-配置写入当前项目的 `.git/config`：
+The canonical path is stored in the current repository's `.git/config`:
 
 ```ini
 [gits]
     sharedSubmodules = /Users/you/.cache/gits
 ```
 
-它不会创建或读取全局 `~/.gits-config`，所以一个项目的选择不会影响其他项目。后续 `gits init`、`gits pull` 和 `gits list` 会继续使用该项目记录的中央目录。
+No global `~/.gits-config` file is created or read. Configuring one project does
+not affect any other project. Later `gits init`, `gits pull`, and `gits list`
+commands in that project continue to use the recorded shared path.
 
-中央目录保存按 URL 区分的裸仓库；每个项目仍保留独立的子模块工作区，并通过 Git alternates 共享中央对象。这样既能复用数据，也不会用符号链接破坏 superproject 记录的子模块提交。
+To inspect, change, or disable the project setting:
 
 ```bash
-gits config                    # 查看当前项目配置
-gits config ~/.cache/gits      # 为当前项目启用或更换中央目录
-gits config --unset            # 为当前项目关闭共享模式
-gits list                      # 查看子模块及缓存状态
-gits reset                     # 取消暂存根仓库和子模块改动
-gits reset --hard              # 丢弃根仓库和子模块改动
-gits status                    # 等价于 git submodule status
+gits config
+gits config /another/shared/path
+gits config --unset
 ```
 
-`gits pull` 使用 `git pull --ff-only`，随后将子模块更新到 superproject 记录的提交，不会擅自把子模块推进到远端分支最新提交。
+## How object sharing works
 
-## 开发与发布
+The shared directory contains one bare mirror for each distinct submodule URL.
+Each project still has its own submodule working tree at the path recorded in
+`.gitmodules`. The submodule checkout references the mirror's object database
+through Git alternates.
+
+This design reduces repeated network transfers and object storage while
+preserving normal submodule isolation. It does not replace submodule directories
+with symbolic links, and it does not change the submodule commit recorded by the
+superproject.
+
+## Commands
+
+| Command | Description |
+| --- | --- |
+| `gits init` | Synchronize and initialize submodules without enabling shared mode. |
+| `gits init <shared_path>` | Enable shared mode for this project, then initialize submodules. |
+| `gits pull` | Run `git pull --ff-only`, then synchronize and update submodules. |
+| `gits reset` | Unstage changes in the superproject and initialized submodules. |
+| `gits reset --hard` | Discard tracked changes and restore recorded submodule commits. |
+| `gits config` | Show the shared path configured for the current project. |
+| `gits config <shared_path>` | Enable or change shared mode for the current project. |
+| `gits config --unset` | Disable shared mode for the current project. |
+| `gits list` | Show submodules and their shared-cache state. |
+| `gits status` | Pass `status` through to `git submodule`. |
+| `gits <args...>` | Pass other arguments through to `git submodule`. |
+| `gits --version` | Print the installed version. |
+
+`gits pull` deliberately updates each submodule to the commit recorded by the
+superproject. It does not advance submodules to the latest commit on their remote
+branches.
+
+Use `gits reset --hard` carefully: it discards tracked changes in both the
+superproject and initialized submodules.
+
+## Development
+
+Run the local checks from the repository root:
 
 ```bash
 bash -n bin/gits tests/gits_test.sh
 bash tests/gits_test.sh
+ruby -c Formula/gits.rb
 brew style Formula/gits.rb
-brew audit --strict gits
 ```
 
-版本号同时维护在 `bin/gits`、`Formula/gits.rb` 和 `CHANGELOG.md`。Formula 固定下载 `v0.1.0` tag 下的脚本并校验 SHA-256，完整发布顺序和验收命令见 [`RELEASING.md`](RELEASING.md)。
+For the complete release and tap verification procedure, see
+[`RELEASING.md`](RELEASING.md).
 
 ## License
 
-MIT
+This project is licensed under the MIT License. See [`LICENSE`](LICENSE).
