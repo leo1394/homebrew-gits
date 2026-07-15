@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.5"
+VERSION="0.2.6"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -484,7 +484,7 @@ update_mirror() {
             error "shared modules repository path is not a bare Git repository: $mirror"
             return 1
         fi
-        print_cmd "git -C $mirror remote update --prune"
+        # print_cmd "git -C $mirror remote update --prune"
         git -C "$mirror" remote update --prune
     else
         print_cmd "git clone --mirror $url $mirror"
@@ -610,13 +610,13 @@ attach_submodule_branch() {
     if git -C "$checkout" show-ref --verify --quiet "refs/heads/$branch"; then
         if git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch" &&
             git -C "$checkout" merge-base --is-ancestor "refs/heads/$branch" "refs/remotes/origin/$branch"; then
-            print_cmd "git -C $path branch -f $branch HEAD"
+            # print_cmd "git -C $path branch -f $branch HEAD"
             git -C "$checkout" branch -f "$branch" HEAD || return 1
         fi
-        print_cmd "git -C $path checkout $branch"
+        # print_cmd "git -C $path checkout $branch"
         git -C "$checkout" checkout "$branch" || return 1
     else
-        print_cmd "git -C $path checkout -b $branch"
+        # print_cmd "git -C $path checkout -b $branch"
         git -C "$checkout" checkout -b "$branch" || return 1
     fi
 
@@ -642,13 +642,13 @@ update_checkout_from_mirror() {
     print_cmd "git -C $path fetch $mirror $branch"
     git -C "$checkout" fetch "$mirror" "+refs/heads/$branch:refs/remotes/origin/$branch" || return 1
     if git -C "$checkout" show-ref --verify --quiet "refs/heads/$branch"; then
-        print_cmd "git -C $path checkout $branch"
+        # print_cmd "git -C $path checkout $branch"
         git -C "$checkout" checkout "$branch" || return 1
     else
-        print_cmd "git -C $path checkout -b $branch origin/$branch"
+        # print_cmd "git -C $path checkout -b $branch origin/$branch"
         git -C "$checkout" checkout -b "$branch" "refs/remotes/origin/$branch" || return 1
     fi
-    print_cmd "git -C $path merge --ff-only origin/$branch"
+    # print_cmd "git -C $path merge --ff-only origin/$branch"
     git -C "$checkout" merge --ff-only "refs/remotes/origin/$branch"
 }
 
@@ -713,7 +713,7 @@ shared_update() {
         else
             attach_submodule_branch "$root" "$path" "$name" "$mirror" || return 1
         fi
-        print_cmd "git -C $path submodule update --init --recursive"
+        # print_cmd "git -C $path submodule update --init --recursive"
         git -C "$root/$path" submodule update --init --recursive || return 1
     done < <(submodule_entries "$root")
 }
@@ -744,7 +744,7 @@ reset_repository() {
         git -C "$root" reset --hard || return 1
         print_cmd "git submodule foreach --recursive git reset --hard"
         git -C "$root" submodule foreach --recursive git reset --hard || return 1
-        print_cmd "git submodule update --init --recursive --force"
+        # print_cmd "git submodule update --init --recursive --force"
         git -C "$root" submodule update --init --recursive --force || return 1
     else
         print_cmd "git reset"

@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.5"
+assert_equals "$("$GITS" --version)" "gits 0.2.6"
 assert_contains "$("$GITS" --help)" "gits init [shared_path]"
 assert_contains "$("$GITS" --help)" "gits add <args...>"
 assert_contains "$("$GITS" --help)" "gits admit <path...|--all>"
