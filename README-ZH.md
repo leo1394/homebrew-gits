@@ -21,6 +21,30 @@ Git 是必需依赖。macOS 上 Formula 使用系统提供的 Git，不会重复
 brew install --HEAD gits
 ```
 
+### Shell 自动补全
+
+Homebrew Formula 会从同一个 `gits` 单文件自动生成并安装 Bash、Zsh、Fish
+补全脚本。安装或升级后请重新打开终端，再测试 Tab 补全。
+
+如果 Zsh 尚未启用补全，可在当前会话执行：
+
+```bash
+eval "$(brew shellenv)"
+autoload -Uz compinit
+compinit
+```
+
+也可以在 Git 仓库之外直接生成指定 shell 的补全脚本：
+
+```bash
+gits completion bash
+gits completion zsh
+gits completion fish
+```
+
+由于 `add` 和 `admit` 都是合法命令，输入 `gits ad<Tab>` 会列出两者；
+输入 `gits adm<Tab>` 会直接补全为 `gits admit`。
+
 ### 旧 shell alias 冲突
 
 如果 `gits list` 或 `gits config` 输出 `git submodule` 的 usage，说明旧版 shell alias 或 function 覆盖了 Homebrew 可执行文件。可在当前终端执行：
@@ -90,9 +114,44 @@ gits status                    # 等价于 git submodule status
 
 `gits config --unset` 会删除当前项目所有由 gits 管理的 alternate 引用，包括旧共享目录残留，但不会删除中央目录中的裸仓库，因为它们可能仍被其他项目使用。用户自行配置的其他 alternate 会保留。
 
-`gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only` 更新父仓库，然后将每个顶层子模块推进到 `submodule.<name>.branch` 配置的远端分支；未配置 branch 时使用远端默认分支。产生新的 gitlink 后，可检查改动并通过 `gits commit <path...>` 提交。
+`gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only` 更新父仓库，然后将每个顶层子模块推进到 `submodule.<name>.branch` 配置的远端分支；未配置 branch 时使用远端默认分支。产生新的 gitlink 后，可检查改动并通过 `gits admit <path...>` 提交。
 
-## 添加并提交改动
+## Clean：安全清理闲置 mirror
+
+`gits clean` 只会清理整个无人引用的 bare mirror，不会删除仍被 checkout 引用的 mirror 中的单个 object。
+
+首次使用时，需要登记所有可能包含 shared-modules 消费项目的目录树。扫描根目录会规范化并持久化到中央目录的 `.gits` 元数据中，不会修改被扫描项目：
+
+```bash
+gits clean --scan ~/Code/clobotics
+gits clean --scan ~/Code/other-projects
+```
+
+扫描会检查各项目的 `objects/info/alternates`，将 mirror 标记为 `used`、`waiting` 或 `eligible`。首次发现无人引用的 mirror 后进入 30 天观察期。默认命令始终只预览：
+
+```bash
+gits clean
+```
+
+连续闲置至少 30 天后，使用以下命令删除 eligible mirror：
+
+```bash
+gits clean --apply
+```
+
+`--apply` 删除前一定会重新扫描。任一扫描根目录缺失或不可读、alternate 无效、mirror 不是普通 bare repository，或者中央目录已被其他 gits 操作锁定时，命令都会 fail closed，不删除任何 mirror。共享模式下的 `gits init`、`gits pull` 和 `gits clean` 使用同一把中央锁。
+
+永久停用某个扫描根目录时可执行：
+
+```bash
+gits clean --forget-scan ~/Code/old-workspace
+```
+
+该命令只移除 clean 元数据，不会同时删除 mirror。所有使用同一 shared-modules 的项目都必须位于已登记扫描根目录下；范围之外的项目无法被发现，因此执行 `--apply` 前必须通过另一个 `--scan` 根目录覆盖它们。
+
+首版以整个 mirror 为最小回收单位。只要 mirror 仍有消费者，就会完整保留，包括当前远端 refs 已不可达的 object；精确 object 级垃圾回收不在本版本范围内。
+
+## Admit：添加并提交改动
 
 `gits add` 保留标准 Git 子模块语义，将所有参数完整透传给 `git submodule add`：
 
@@ -101,22 +160,22 @@ gits add [-q|--quiet] [-b <branch>] [-f|--force] [--name <name>] \
   [--reference <repository>] [--] <repository> [<path>]
 ```
 
-`gits commit` 会先暂存指定路径，然后打开 Git 配置的编辑器并预填提交信息；编辑器正常关闭后创建 commit：
+`admit` 表示将选中的改动接纳到项目历史中。`gits admit` 会先暂存指定路径，然后打开 Git 配置的编辑器并预填提交信息；编辑器正常关闭后创建 commit：
 
 ```bash
-gits commit scripts
-gits commit scripts/
-gits commit scripts android
-gits commit non-submodule-directory
-gits commit .
+gits admit scripts
+gits admit scripts/
+gits admit scripts android
+gits admit non-submodule-directory
+gits admit .
 ```
 
-子模块路径末尾的 `/` 会被规范化，因此 `gits commit scripts` 与 `gits commit scripts/` 等效。
+子模块路径末尾的 `/` 会被规范化，因此 `gits admit scripts` 与 `gits admit scripts/` 等效。
 
 `--all` 仅暂存 `.gitmodules` 中声明的全部子模块：
 
 ```bash
-gits commit --all
+gits admit --all
 ```
 
 如果项目包含 `scripts`、`android` 和 `ios` 三个子模块，该命令等效于：
@@ -125,7 +184,7 @@ gits commit --all
 git add scripts android ios
 ```
 
-`gits commit --all` 与 `git add --all` 不同，不会自动暂存普通文件。
+`gits admit --all` 与 `git add --all` 不同，不会自动暂存普通文件。
 
 如果本次 commit 仅包含子模块，默认提交信息为：
 
@@ -139,7 +198,9 @@ update submodule: scripts android ios
 feat:
 ```
 
-用户可以保留、替换或补充默认内容。commit 也会包含执行 `gits commit` 前已经暂存的改动。如果提交信息编辑被中断或取消，`gits` 会将暂存区完整恢复到命令执行前的状态，不会丢弃工作区改动。
+用户可以保留、替换或补充默认内容。commit 也会包含执行 `gits admit` 前已经暂存的改动。如果提交信息编辑被中断或取消，`gits` 会将暂存区完整恢复到命令执行前的状态，不会丢弃工作区改动。
+
+`gits commit` 在本版本中暂时保留为兼容别名；执行时会输出弃用提示，然后运行相同的 admit 流程。
 
 ## 开发与发布
 

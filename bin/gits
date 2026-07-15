@@ -1,10 +1,13 @@
 #!/bin/bash
 
-VERSION="0.2.4"
+VERSION="0.2.5"
 CONFIG_KEY="gits.sharedSubmodules"
+CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
 GREEN=$'\033[1;32m'
+YELLOW=$'\033[1;33m'
 RESET=$'\033[0m'
+SHARED_LOCK_DIR=""
 
 print_cmd() {
     printf '%s%s%s\n' "$GREEN" "$1" "$RESET"
@@ -38,13 +41,241 @@ usage:
   gits pull                        fast-forward the repository and update submodules
   gits reset [--hard]              reset the repository and its submodules
   gits add <args...>               pass through to git submodule add
-  gits commit <path...|--all>      stage changes, edit a message, and commit
+  gits admit <path...|--all>       stage changes, edit a message, and commit
+  gits commit <path...|--all>      deprecated alias for gits admit
   gits config [shared_path|--unset]
                                    show, enable, or disable shared mode for this repository
   gits list                        show submodules and shared modules repository state
+  gits clean [--scan <root>...]    preview unused shared mirrors
+  gits clean --apply               delete mirrors unused for at least 30 days
+  gits clean --forget-scan <root>  remove a registered scan root
+  gits completion <shell>          generate completion for bash, zsh, or fish
   gits <args...>                   pass through to git submodule <args...>
   gits --version                   show the installed version
 EOF
+}
+
+completion_script() {
+    case "$1" in
+        bash)
+            cat <<'EOF'
+_gits_complete_paths() {
+    local path_type="$1"
+    local path_prefix="$2"
+    local candidate
+
+    while IFS= read -r candidate; do
+        COMPREPLY+=( "$candidate" )
+    done < <(compgen "$path_type" -- "$path_prefix")
+}
+
+_gits() {
+    local cur prev subcommand
+
+    COMPREPLY=()
+    cur="${COMP_WORDS[COMP_CWORD]}"
+    prev=""
+    if [ "$COMP_CWORD" -gt 0 ]; then
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    fi
+
+    if [ "$COMP_CWORD" -eq 1 ]; then
+        COMPREPLY=( $(compgen -W "init pull reset add admit commit config list clean completion status update deinit foreach summary sync set-branch set-url absorbgitdirs help --help -h --version -v" -- "$cur") )
+        return 0
+    fi
+
+    subcommand="${COMP_WORDS[1]}"
+    case "$subcommand" in
+        admit|commit)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--all" -- "$cur") )
+            else
+                _gits_complete_paths -f "$cur"
+            fi
+            ;;
+        clean)
+            case "$prev" in
+                --scan|--forget-scan)
+                    _gits_complete_paths -d "$cur"
+                    ;;
+                *)
+                    if [[ "$cur" == -* ]]; then
+                        COMPREPLY=( $(compgen -W "--scan --apply --forget-scan" -- "$cur") )
+                    fi
+                    ;;
+            esac
+            ;;
+        reset)
+            COMPREPLY=( $(compgen -W "--hard" -- "$cur") )
+            ;;
+        config)
+            if [ "$prev" != "--unset" ]; then
+                COMPREPLY=( $(compgen -W "--unset" -- "$cur") )
+                _gits_complete_paths -d "$cur"
+            fi
+            ;;
+        init)
+            _gits_complete_paths -d "$cur"
+            ;;
+        add)
+            case "$prev" in
+                --reference)
+                    _gits_complete_paths -d "$cur"
+                    ;;
+                -b|--branch|--name|--depth)
+                    ;;
+                *)
+                    if [[ "$cur" == -* ]]; then
+                        COMPREPLY=( $(compgen -W "-q --quiet -b --branch -f --force --name --reference --dissociate --depth --progress --no-progress --" -- "$cur") )
+                    else
+                        _gits_complete_paths -f "$cur"
+                    fi
+                    ;;
+            esac
+            ;;
+        completion)
+            COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
+            ;;
+    esac
+}
+
+complete -F _gits gits
+EOF
+            ;;
+        zsh)
+            cat <<'EOF'
+#compdef gits
+
+_gits() {
+    local -a commands
+
+    commands=(
+        'init:initialize submodules'
+        'pull:fast-forward the repository and update submodules'
+        'reset:reset the repository and its submodules'
+        'add:pass through to git submodule add'
+        'admit:stage changes, edit a message, and commit'
+        'commit:deprecated alias for admit'
+        'config:show, enable, or disable shared mode'
+        'list:show submodules and shared repository state'
+        'clean:preview or remove unused shared mirrors'
+        'completion:generate shell completion'
+        'status:pass through to git submodule status'
+        'update:pass through to git submodule update'
+        'deinit:pass through to git submodule deinit'
+        'foreach:pass through to git submodule foreach'
+        'summary:pass through to git submodule summary'
+        'sync:pass through to git submodule sync'
+        'set-branch:pass through to git submodule set-branch'
+        'set-url:pass through to git submodule set-url'
+        'absorbgitdirs:pass through to git submodule absorbgitdirs'
+        'help:show help'
+        '--help:show help'
+        '-h:show help'
+        '--version:show the installed version'
+        '-v:show the installed version'
+    )
+
+    if (( CURRENT == 2 )); then
+        _describe 'command' commands
+        return
+    fi
+
+    case "$words[2]" in
+        admit|commit)
+            _arguments '--all[stage every declared submodule]' '*:path:_files'
+            ;;
+        clean)
+            _arguments \
+                '*--scan[register a project scan root]:directory:_directories' \
+                '--apply[delete mirrors unused for at least 30 days]' \
+                '--forget-scan[remove a registered scan root]:directory:_directories'
+            ;;
+        reset)
+            _arguments '--hard[discard working tree changes]'
+            ;;
+        config)
+            _arguments '--unset[disable shared mode]' '1:shared directory:_directories'
+            ;;
+        init)
+            _arguments '1:shared directory:_directories'
+            ;;
+        add)
+            _arguments \
+                '(-q --quiet)'{-q,--quiet}'[suppress progress output]' \
+                '(-b --branch)'{-b,--branch}'[checkout branch]:branch:' \
+                '(-f --force)'{-f,--force}'[allow an otherwise ignored path]' \
+                '--name[set the submodule name]:name:' \
+                '--reference[reference repository]:repository:_directories' \
+                '--dissociate[borrow objects only during clone]' \
+                '--depth[create a shallow clone]:depth:' \
+                '--progress[force progress reporting]' \
+                '--no-progress[disable progress reporting]' \
+                '--[end option parsing]' \
+                '1:repository:_files' \
+                '2:path:_files'
+            ;;
+        completion)
+            _arguments '1:shell:(bash zsh fish)'
+            ;;
+    esac
+}
+
+compdef _gits gits
+EOF
+            ;;
+        fish)
+            cat <<'EOF'
+function __gits_no_subcommand
+    set -l words (commandline -opc)
+    test (count $words) -eq 1
+end
+
+complete -c gits -f -n __gits_no_subcommand -a init -d 'Initialize submodules'
+complete -c gits -f -n __gits_no_subcommand -a pull -d 'Fast-forward the repository and update submodules'
+complete -c gits -f -n __gits_no_subcommand -a reset -d 'Reset the repository and its submodules'
+complete -c gits -f -n __gits_no_subcommand -a add -d 'Pass through to git submodule add'
+complete -c gits -f -n __gits_no_subcommand -a admit -d 'Stage changes, edit a message, and commit'
+complete -c gits -f -n __gits_no_subcommand -a commit -d 'Deprecated alias for admit'
+complete -c gits -f -n __gits_no_subcommand -a config -d 'Show, enable, or disable shared mode'
+complete -c gits -f -n __gits_no_subcommand -a list -d 'Show submodules and shared repository state'
+complete -c gits -f -n __gits_no_subcommand -a clean -d 'Preview or remove unused shared mirrors'
+complete -c gits -f -n __gits_no_subcommand -a completion -d 'Generate shell completion'
+complete -c gits -f -n __gits_no_subcommand -a 'status update deinit foreach summary sync set-branch set-url absorbgitdirs' -d 'Pass through to git submodule'
+complete -c gits -f -n __gits_no_subcommand -a help -d 'Show help'
+complete -c gits -n __gits_no_subcommand -s h -l help -d 'Show help'
+complete -c gits -n __gits_no_subcommand -s v -l version -d 'Show the installed version'
+
+complete -c gits -n '__fish_seen_subcommand_from admit commit' -l all -d 'Stage every declared submodule'
+complete -c gits -F -n '__fish_seen_subcommand_from admit commit'
+
+complete -c gits -n '__fish_seen_subcommand_from clean' -l scan -r -a '(__fish_complete_directories)' -d 'Register a project scan root'
+complete -c gits -n '__fish_seen_subcommand_from clean' -l apply -d 'Delete mirrors unused for at least 30 days'
+complete -c gits -n '__fish_seen_subcommand_from clean' -l forget-scan -r -a '(__fish_complete_directories)' -d 'Remove a registered scan root'
+
+complete -c gits -n '__fish_seen_subcommand_from reset' -l hard -d 'Discard working tree changes'
+complete -c gits -n '__fish_seen_subcommand_from config' -l unset -d 'Disable shared mode'
+complete -c gits -F -n '__fish_seen_subcommand_from config init'
+
+complete -c gits -n '__fish_seen_subcommand_from add' -s q -l quiet -d 'Suppress progress output'
+complete -c gits -n '__fish_seen_subcommand_from add' -s b -l branch -r -d 'Checkout branch'
+complete -c gits -n '__fish_seen_subcommand_from add' -s f -l force -d 'Allow an otherwise ignored path'
+complete -c gits -n '__fish_seen_subcommand_from add' -l name -r -d 'Set the submodule name'
+complete -c gits -n '__fish_seen_subcommand_from add' -l reference -r -a '(__fish_complete_directories)' -d 'Reference repository'
+complete -c gits -n '__fish_seen_subcommand_from add' -l dissociate -d 'Borrow objects only during clone'
+complete -c gits -n '__fish_seen_subcommand_from add' -l depth -r -d 'Create a shallow clone'
+complete -c gits -n '__fish_seen_subcommand_from add' -l progress -d 'Force progress reporting'
+complete -c gits -n '__fish_seen_subcommand_from add' -l no-progress -d 'Disable progress reporting'
+complete -c gits -F -n '__fish_seen_subcommand_from add'
+
+complete -c gits -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
+EOF
+            ;;
+        *)
+            error "unsupported completion shell '$1'; expected bash, zsh, or fish"
+            return 1
+            ;;
+    esac
 }
 
 shared_base() {
@@ -60,6 +291,57 @@ canonical_directory() {
         cd "$path" || exit 1
         pwd -P
     )
+}
+
+canonical_existing_directory() {
+    local path="$1"
+
+    [ -d "$path" ] || return 1
+    (
+        cd "$path" || exit 1
+        pwd -P
+    )
+}
+
+acquire_shared_lock() {
+    local base="$1"
+    local lock="$base/.gits/lock"
+    local owner
+
+    mkdir -p "$base/.gits" || return 1
+    if ! mkdir "$lock" 2>/dev/null; then
+        owner=$(sed -n '1p' "$lock/pid" 2>/dev/null)
+        if [ -n "$owner" ]; then
+            error "shared modules repository is locked by process $owner: $lock"
+        else
+            error "shared modules repository is locked: $lock"
+        fi
+        return 1
+    fi
+    printf '%s\n' "$$" > "$lock/pid" || {
+        rmdir "$lock" 2>/dev/null || true
+        return 1
+    }
+    SHARED_LOCK_DIR="$lock"
+}
+
+release_shared_lock() {
+    [ -n "$SHARED_LOCK_DIR" ] || return 0
+    rm -f "$SHARED_LOCK_DIR/pid"
+    rmdir "$SHARED_LOCK_DIR" 2>/dev/null || true
+    SHARED_LOCK_DIR=""
+}
+
+run_with_shared_lock() {
+    local base="$1"
+    local status
+    shift
+
+    acquire_shared_lock "$base" || return 1
+    "$@"
+    status=$?
+    release_shared_lock
+    return "$status"
 }
 
 enable_shared() {
@@ -120,7 +402,7 @@ normal_init() {
 
     print_cmd "git submodule sync --recursive"
     git -C "$root" submodule sync --recursive || return 1
-    print_cmd "git submodule update --init --recursive"
+    # print_cmd "git submodule update --init --recursive"
     git -C "$root" submodule update --init --recursive || return 1
 
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
@@ -139,7 +421,7 @@ normal_pull() {
 
     print_cmd "git pull --ff-only"
     git -C "$root" pull --ff-only || return 1
-    print_cmd "git submodule sync --recursive"
+    # print_cmd "git submodule sync --recursive"
     git -C "$root" submodule sync --recursive || return 1
 
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
@@ -149,9 +431,9 @@ normal_pull() {
         print_cmd "git submodule update --init -- $path"
         git -C "$root" submodule update --init -- "$path" || return 1
         attach_submodule_branch "$root" "$path" "$name" || return 1
-        print_cmd "git submodule update --init --remote --merge -- $path"
+        # print_cmd "git submodule update --init --remote --merge -- $path"
         git -C "$root" submodule update --init --remote --merge -- "$path" || return 1
-        print_cmd "git -C $path submodule update --init --recursive"
+        # print_cmd "git -C $path submodule update --init --recursive"
         git -C "$root/$path" submodule update --init --recursive || return 1
     done < <(submodule_entries "$root")
 }
@@ -421,7 +703,7 @@ shared_update() {
                 git -C "$root" submodule update --init -- "$path" || return 1
             fi
         else
-            print_cmd "git submodule update --init --reference $mirror -- $path"
+            print_cmd "git submodule update --init --reference -- $path"
             git -C "$root" submodule update --init --reference "$mirror" -- "$path" || return 1
             add_alternate "$root/$path" "$mirror" "$legacy_mirror" || return 1
         fi
@@ -440,7 +722,7 @@ shared_pull() {
     local root="$1"
     local base="$2"
 
-    print_cmd "git -c fetch.recurseSubmodules=false pull --ff-only"
+    # print_cmd "git -c fetch.recurseSubmodules=false pull --ff-only"
     git -C "$root" -c fetch.recurseSubmodules=false pull --ff-only || return 1
     shared_update "$root" "$base" true
 }
@@ -577,7 +859,7 @@ default_commit_message() {
     printf 'update submodule: %s\n' "$joined"
 }
 
-commit_paths() {
+admit_paths() {
     local root="$1"
     shift
     local index_path
@@ -593,13 +875,13 @@ commit_paths() {
     local -a paths=()
 
     [ "$#" -gt 0 ] || {
-        error "commit requires at least one path or --all"
+        error "admit requires at least one path or --all"
         return 1
     }
 
     if [ "$1" = "--all" ]; then
         [ "$#" -eq 1 ] || {
-            error "commit --all accepts no additional paths"
+            error "admit --all accepts no additional paths"
             return 1
         }
         while IFS= read -r -d '' key && IFS= read -r -d '' path; do
@@ -612,7 +894,7 @@ commit_paths() {
     else
         for requested in "$@"; do
             [ "${requested#-}" = "$requested" ] || {
-                error "commit supports paths or --all"
+                error "admit supports paths or --all"
                 return 1
             }
             paths+=("$(normalize_add_path "$root" "$requested")")
@@ -633,7 +915,7 @@ commit_paths() {
         return 1
     }
 
-    trap 'restore_index "$index_path" "$backup" "$had_index"; rm -f "$backup"; error "commit cancelled; index restored"; trap - INT TERM HUP; exit 130' INT TERM HUP
+    trap 'restore_index "$index_path" "$backup" "$had_index"; rm -f "$backup"; error "admit cancelled; index restored"; trap - INT TERM HUP; exit 130' INT TERM HUP
 
     print_cmd "git add -- ${paths[*]}"
     git -C "$root" add -- "${paths[@]}" || {
@@ -671,7 +953,7 @@ commit_paths() {
         restore_index "$index_path" "$backup" "$had_index"
         rm -f "$backup"
         trap - INT TERM HUP
-        error "commit cancelled; index restored"
+        error "admit cancelled; index restored"
         return "$status"
     }
 
@@ -720,6 +1002,412 @@ list_submodules() {
     done < <(submodule_entries "$root")
 }
 
+clean_state_file() {
+    local base="$1"
+
+    printf '%s/.gits/clean-config\n' "$base"
+}
+
+register_clean_scan_root() {
+    local base="$1"
+    local requested="$2"
+    local root
+    local state
+    local existing
+
+    root=$(canonical_existing_directory "$requested") || {
+        error "clean scan root does not exist or is not readable: $requested"
+        return 1
+    }
+    state=$(clean_state_file "$base")
+    while IFS= read -r existing; do
+        if [ "$existing" = "$root" ]; then
+            printf 'clean scan root already registered: %s\n' "$root"
+            return 0
+        fi
+    done < <(git config --file "$state" --get-all clean.scanRoot 2>/dev/null)
+    git config --file "$state" --add clean.scanRoot "$root" || return 1
+    printf 'clean scan root registered: %s%s%s\n' "$GREEN" "$root" "$RESET"
+}
+
+forget_clean_scan_root() {
+    local base="$1"
+    local requested="$2"
+    local root="$requested"
+    local state
+    local existing
+    local found=false
+
+    if [ -d "$requested" ]; then
+        root=$(canonical_existing_directory "$requested") || return 1
+    elif [ "${requested#/}" = "$requested" ]; then
+        root="$PWD/$requested"
+    fi
+    state=$(clean_state_file "$base")
+    while IFS= read -r existing; do
+        if [ "$existing" = "$root" ]; then
+            found=true
+            break
+        fi
+    done < <(git config --file "$state" --get-all clean.scanRoot 2>/dev/null)
+    if [ "$found" != "true" ]; then
+        error "clean scan root is not registered: $root"
+        return 1
+    fi
+    git config --file "$state" --fixed-value --unset-all clean.scanRoot "$root" || return 1
+    printf 'clean scan root forgotten: %s%s%s\n' "$YELLOW" "$root" "$RESET"
+    printf 'no mirrors were deleted\n'
+}
+
+clean_candidate_key() {
+    local mirror="$1"
+
+    printf '%s' "$mirror" | git hash-object --stdin
+}
+
+format_size_kb() {
+    local size_kb="$1"
+
+    awk -v size="$size_kb" 'BEGIN {
+        if (size >= 1048576) {
+            printf "%.1f GiB", size / 1048576
+        } else if (size >= 1024) {
+            printf "%.1f MiB", size / 1024
+        } else {
+            printf "%d KiB", size
+        }
+    }'
+}
+
+scan_and_clean_mirrors() {
+    local base="$1"
+    local apply="$2"
+    local state
+    local last_scan_file="$base/.gits/last-scan"
+    local repo_dir="$base/repositories"
+    local temp
+    local roots_file
+    local alternates_file
+    local mirrors_file
+    local eligible_file
+    local root
+    local entry
+    local mirror
+    local mirror_name
+    local objects
+    local size_kb
+    local key
+    local alternates
+    local object_db
+    local alternate
+    local resolved
+    local mirror_key
+    local mirror_path_value
+    local mirror_objects
+    local mirror_size
+    local consumer_file
+    local consumer_count
+    local consumer
+    local first_unused
+    local now
+    local age_seconds
+    local age_days
+    local remaining_days
+    local human_size
+    local blocked=false
+    local used_count=0
+    local waiting_count=0
+    local eligible_count=0
+    local eligible_kb=0
+    local deleted_count=0
+    local deleted_kb=0
+
+    state=$(clean_state_file "$base")
+    temp=$(mktemp -d "${TMPDIR:-/tmp}/gits-clean.XXXXXX") || return 1
+    roots_file="$temp/roots"
+    alternates_file="$temp/alternates"
+    mirrors_file="$temp/mirrors"
+    eligible_file="$temp/eligible"
+    mkdir "$temp/consumers" || {
+        rm -rf "$temp"
+        return 1
+    }
+    : > "$alternates_file"
+    : > "$mirrors_file"
+    : > "$eligible_file"
+    : > "$temp/last-scan"
+    git config --file "$state" --get-all clean.scanRoot > "$roots_file" 2>/dev/null || true
+
+    printf 'shared modules repository: %s%s%s\n' "$GREEN" "$base" "$RESET"
+    if [ ! -s "$roots_file" ]; then
+        rm -rf "$temp"
+        error "no clean scan roots registered; use 'gits clean --scan <root>' first"
+        return 1
+    fi
+    printf 'scan roots:\n'
+    while IFS= read -r root; do
+        printf '  %s%s%s\n' "$GREEN" "$root" "$RESET"
+        if [ ! -d "$root" ] || [ ! -r "$root" ]; then
+            error "clean scan root is unavailable: $root"
+            blocked=true
+            continue
+        fi
+        if ! find "$root" -type f -path '*/objects/info/alternates' -print0 >> "$alternates_file" 2> "$temp/find-errors"; then
+            error "failed to scan clean root: $root"
+            sed -n '1,5p' "$temp/find-errors" >&2
+            blocked=true
+        fi
+    done < "$roots_file"
+
+    if [ -L "$repo_dir" ] || { [ -e "$repo_dir" ] && [ ! -d "$repo_dir" ]; }; then
+        error "blocked invalid shared repositories directory: $repo_dir"
+        blocked=true
+    elif [ -d "$repo_dir" ]; then
+        for entry in "$repo_dir"/.[!.]* "$repo_dir"/..?*; do
+            [ -e "$entry" ] || continue
+            error "blocked unexpected entry in shared repositories: $entry"
+            blocked=true
+        done
+        for entry in "$repo_dir"/*; do
+            [ -e "$entry" ] || continue
+            mirror_name=$(basename "$entry")
+            if [ -L "$entry" ]; then
+                error "blocked symbolic link in shared repositories: $entry"
+                blocked=true
+                continue
+            fi
+            case "$mirror_name" in
+                *.git)
+                    ;;
+                *)
+                    error "blocked unexpected entry in shared repositories: $entry"
+                    blocked=true
+                    continue
+                    ;;
+            esac
+            if [ ! -d "$entry" ] || [ "$(git -C "$entry" rev-parse --is-bare-repository 2>/dev/null)" != "true" ]; then
+                error "blocked non-bare shared mirror: $entry"
+                blocked=true
+                continue
+            fi
+            mirror=$(canonical_existing_directory "$entry") || {
+                error "cannot resolve shared mirror: $entry"
+                blocked=true
+                continue
+            }
+            if [ -L "$mirror/objects" ]; then
+                error "blocked symbolic link for shared mirror objects: $mirror/objects"
+                blocked=true
+                continue
+            fi
+            objects=$(canonical_existing_directory "$mirror/objects") || {
+                error "cannot resolve shared mirror objects: $mirror"
+                blocked=true
+                continue
+            }
+            size_kb=$(du -sk "$mirror" 2>/dev/null | awk '{print $1}')
+            if [ -z "$size_kb" ]; then
+                error "cannot measure shared mirror: $mirror"
+                blocked=true
+                continue
+            fi
+            key=$(clean_candidate_key "$mirror") || {
+                blocked=true
+                continue
+            }
+            : > "$temp/consumers/$key"
+            printf '%s\t%s\t%s\t%s\n' "$key" "$mirror" "$objects" "$size_kb" >> "$mirrors_file"
+        done
+    fi
+
+    while IFS= read -r -d '' alternates; do
+        object_db=${alternates%/info/alternates}
+        while IFS= read -r alternate || [ -n "$alternate" ]; do
+            [ -n "$alternate" ] || continue
+            case "$alternate" in
+                /*)
+                    resolved=$(canonical_existing_directory "$alternate" 2>/dev/null)
+                    ;;
+                *)
+                    resolved=$(canonical_existing_directory "$object_db/$alternate" 2>/dev/null)
+                    ;;
+            esac
+            if [ -z "$resolved" ]; then
+                error "blocked invalid alternate in $alternates: $alternate"
+                blocked=true
+                continue
+            fi
+            while IFS=$'\t' read -r mirror_key mirror_path_value mirror_objects mirror_size; do
+                if [ "$resolved" = "$mirror_objects" ]; then
+                    printf '%s\n' "$alternates" >> "$temp/consumers/$mirror_key"
+                    break
+                fi
+            done < "$mirrors_file"
+        done < "$alternates"
+    done < "$alternates_file"
+
+    if [ "$blocked" = "true" ]; then
+        printf 'blocked: clean scan is incomplete; no candidate state or mirrors were changed\n' >&2
+        rm -rf "$temp"
+        return 1
+    fi
+
+    now=$(date +%s)
+    while IFS=$'\t' read -r mirror_key mirror_path_value mirror_objects mirror_size; do
+        consumer_file="$temp/consumers/$mirror_key"
+        consumer_count=$(wc -l < "$consumer_file" | tr -d ' ')
+        human_size=$(format_size_kb "$mirror_size")
+        if [ "$consumer_count" -gt 0 ]; then
+            git config --file "$state" --remove-section "candidate.$mirror_key" 2>/dev/null || true
+            printf '%s\tused\t%s\t%s\t%s\n' "$now" "$mirror_size" "$consumer_count" "$mirror_path_value" >> "$temp/last-scan"
+            printf 'used: %s%s%s (%s, %s consumers)\n' "$GREEN" "$(basename "$mirror_path_value")" "$RESET" "$human_size" "$consumer_count"
+            while IFS= read -r consumer; do
+                printf '  %s\n' "$consumer"
+            done < "$consumer_file"
+            used_count=$((used_count + 1))
+            continue
+        fi
+
+        first_unused=$(git config --file "$state" --get "candidate.$mirror_key.firstUnused" 2>/dev/null)
+        case "$first_unused" in
+            ""|*[!0-9]*)
+                first_unused="$now"
+                git config --file "$state" "candidate.$mirror_key.firstUnused" "$first_unused" || {
+                    rm -rf "$temp"
+                    return 1
+                }
+                git config --file "$state" "candidate.$mirror_key.mirror" "$mirror_path_value" || {
+                    rm -rf "$temp"
+                    return 1
+                }
+                ;;
+        esac
+        age_seconds=$((now - first_unused))
+        [ "$age_seconds" -ge 0 ] || age_seconds=0
+        age_days=$((age_seconds / 86400))
+        if [ "$age_seconds" -ge "$CLEAN_GRACE_SECONDS" ]; then
+            printf '%s\teligible\t%s\t0\t%s\n' "$now" "$mirror_size" "$mirror_path_value" >> "$temp/last-scan"
+            printf 'eligible: %s%s%s (%s, unused %s days)\n' "$RED" "$(basename "$mirror_path_value")" "$RESET" "$human_size" "$age_days"
+            printf '%s\t%s\t%s\n' "$mirror_key" "$mirror_path_value" "$mirror_size" >> "$eligible_file"
+            eligible_count=$((eligible_count + 1))
+            eligible_kb=$((eligible_kb + mirror_size))
+        else
+            remaining_days=$(((CLEAN_GRACE_SECONDS - age_seconds + 86399) / 86400))
+            printf '%s\twaiting\t%s\t0\t%s\n' "$now" "$mirror_size" "$mirror_path_value" >> "$temp/last-scan"
+            printf 'waiting: %s%s%s (%s, unused %s days, %s days remaining)\n' "$YELLOW" "$(basename "$mirror_path_value")" "$RESET" "$human_size" "$age_days" "$remaining_days"
+            waiting_count=$((waiting_count + 1))
+        fi
+    done < "$mirrors_file"
+
+    mv "$temp/last-scan" "$last_scan_file" || {
+        rm -rf "$temp"
+        return 1
+    }
+
+    printf 'summary: %s used, %s waiting, %s eligible, %s reclaimable\n' "$used_count" "$waiting_count" "$eligible_count" "$(format_size_kb "$eligible_kb")"
+    if [ "$apply" != "true" ]; then
+        printf "dry run: use 'gits clean --apply' to delete eligible mirrors\n"
+        rm -rf "$temp"
+        return 0
+    fi
+
+    while IFS=$'\t' read -r mirror_key mirror_path_value mirror_size; do
+        if [ "$(dirname "$mirror_path_value")" != "$repo_dir" ] || [ -L "$mirror_path_value" ] || [ -L "$mirror_path_value/objects" ] ||
+            [ "$(git -C "$mirror_path_value" rev-parse --is-bare-repository 2>/dev/null)" != "true" ] ||
+            [ -s "$temp/consumers/$mirror_key" ]; then
+            error "mirror failed deletion validation: $mirror_path_value"
+            rm -rf "$temp"
+            return 1
+        fi
+    done < "$eligible_file"
+
+    while IFS=$'\t' read -r mirror_key mirror_path_value mirror_size; do
+        rm -rf "$mirror_path_value" || {
+            error "failed to delete shared mirror: $mirror_path_value"
+            rm -rf "$temp"
+            return 1
+        }
+        git config --file "$state" --remove-section "candidate.$mirror_key" 2>/dev/null || true
+        printf 'deleted: %s%s%s\n' "$GREEN" "$mirror_path_value" "$RESET"
+        deleted_count=$((deleted_count + 1))
+        deleted_kb=$((deleted_kb + mirror_size))
+    done < "$eligible_file"
+    printf 'cleaned: %s mirrors, %s reclaimed\n' "$deleted_count" "$(format_size_kb "$deleted_kb")"
+    rm -rf "$temp"
+}
+
+clean_repository() {
+    local base="$1"
+    shift
+    local mode="preview"
+    local status=0
+    local requested
+    local -a scan_roots=()
+
+    [ -d "$base" ] || {
+        error "shared modules repository does not exist: $base"
+        return 1
+    }
+    case "$1" in
+        "")
+            ;;
+        --apply)
+            [ "$#" -eq 1 ] || {
+                error "clean --apply accepts no additional arguments"
+                return 1
+            }
+            mode="apply"
+            ;;
+        --forget-scan)
+            [ "$#" -eq 2 ] || {
+                error "clean --forget-scan requires exactly one root"
+                return 1
+            }
+            mode="forget"
+            scan_roots+=("$2")
+            ;;
+        --scan)
+            while [ "$#" -gt 0 ]; do
+                [ "$1" = "--scan" ] && [ -n "$2" ] || {
+                    error "clean accepts repeated --scan <root> arguments"
+                    return 1
+                }
+                scan_roots+=("$2")
+                shift 2
+            done
+            mode="scan"
+            ;;
+        *)
+            error "clean accepts --scan <root>..., --apply, or --forget-scan <root>"
+            return 1
+            ;;
+    esac
+
+    acquire_shared_lock "$base" || return 1
+    case "$mode" in
+        scan)
+            for requested in "${scan_roots[@]}"; do
+                register_clean_scan_root "$base" "$requested" || {
+                    status=1
+                    break
+                }
+            done
+            [ "$status" -ne 0 ] || scan_and_clean_mirrors "$base" false || status=$?
+            ;;
+        forget)
+            forget_clean_scan_root "$base" "${scan_roots[0]}" || status=$?
+            ;;
+        apply)
+            scan_and_clean_mirrors "$base" true || status=$?
+            ;;
+        *)
+            scan_and_clean_mirrors "$base" false || status=$?
+            ;;
+    esac
+    release_shared_lock
+    return "$status"
+}
+
 main() {
     local root
     local base
@@ -732,6 +1420,14 @@ main() {
         --version|-v)
             echo "gits $VERSION"
             return 0
+            ;;
+        completion)
+            [ "$#" -eq 2 ] || {
+                error "completion requires exactly one shell: bash, zsh, or fish"
+                return 1
+            }
+            completion_script "$2"
+            return $?
             ;;
     esac
 
@@ -752,7 +1448,7 @@ main() {
             fi
             base=$(shared_base "$root")
             if [ -n "$base" ]; then
-                shared_update "$root" "$base"
+                run_with_shared_lock "$base" shared_update "$root" "$base"
             else
                 normal_init "$root"
             fi
@@ -764,7 +1460,7 @@ main() {
             }
             base=$(shared_base "$root")
             if [ -n "$base" ]; then
-                shared_pull "$root" "$base"
+                run_with_shared_lock "$base" shared_pull "$root" "$base"
             else
                 normal_pull "$root"
             fi
@@ -776,9 +1472,14 @@ main() {
             }
             reset_repository "$root" "$2"
             ;;
-        commit)
+        admit)
             shift
-            commit_paths "$root" "$@"
+            admit_paths "$root" "$@"
+            ;;
+        commit)
+            error "'commit' is deprecated; use 'gits admit' instead"
+            shift
+            admit_paths "$root" "$@"
             ;;
         config)
             [ -z "$3" ] || {
@@ -809,6 +1510,15 @@ main() {
             }
             base=$(shared_base "$root")
             list_submodules "$root" "$base"
+            ;;
+        clean)
+            base=$(shared_base "$root")
+            [ -n "$base" ] || {
+                error "clean requires shared mode for the current project"
+                return 1
+            }
+            shift
+            clean_repository "$base" "$@"
             ;;
         "")
             git -C "$root" submodule

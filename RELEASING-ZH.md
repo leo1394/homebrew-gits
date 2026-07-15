@@ -22,8 +22,8 @@ LC_ALL=C shasum -a 256 bin/gits
 将主分支推送至 `https://github.com/leo1394/homebrew-gits`，然后创建并推送与 Formula 一致的 tag：
 
 ```bash
-git tag -a v0.2.4 -m "gits 0.2.4"
-git push origin master v0.2.4
+git tag -a v0.2.5 -m "gits 0.2.5"
+git push origin master v0.2.5
 ```
 
 Formula 的稳定 URL 使用该 tag 下的 `bin/gits` 单文件，并用 SHA-256 锁定内容。tag 必须在安装和审计前存在。
@@ -41,6 +41,17 @@ brew test gits
 gits --version
 ```
 
+确认 Formula 生成的三种补全文件已经安装并链接：
+
+```bash
+test -e "$(brew --prefix)/etc/bash_completion.d/gits"
+test -e "$(brew --prefix)/share/zsh/site-functions/_gits"
+test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
+```
+
+重新打开 Zsh，确认 `gits adm<Tab>` 直接补全为 `gits admit`，并且
+`gits ad<Tab>` 同时列出 `add` 和 `admit`。
+
 ## 4. 发布检查
 
 - 在 macOS 全新环境安装，确认 Formula 复用系统 Git，不会额外安装 Homebrew Git。
@@ -51,3 +62,9 @@ gits --version
 - 确认 `gits init`、`gits pull` 和 `gits reset` 后顶层子模块位于配置分支或远端默认分支。
 - 用两个项目复用同一 `<shared_path>`，确认中央目录只有一份对应裸仓库，并且两个项目的子模块工作区相互独立。
 - 确认仅尾部 `.git` 不同的两个 URL 复用同一 mirror，并清理 checkout 中旧版 alternate 引用。
+- 执行 `gits clean --scan <root>`，确认保存规范化扫描根并且默认只预览，不删除 mirror。
+- 确认无人引用 mirror 首次进入 30 天观察期，只有满 30 天且 `gits clean --apply` 二次扫描仍无人引用时才删除。
+- 确认扫描根缺失、alternate 无效、锁冲突、符号链接或非 bare mirror 会阻止本次全部删除。
+- 确认仍被引用的 mirror 及其中 unreachable object 均被保留。
+- 在 Git 仓库之外确认 `gits completion bash`、`gits completion zsh` 和
+  `gits completion fish` 均输出非空脚本，未知 shell 返回红色错误。

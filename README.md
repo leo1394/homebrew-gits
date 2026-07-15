@@ -21,6 +21,9 @@ current project only when you explicitly provide a shared path.
   top-level submodule to the latest commit on its configured remote branch.
 - Stages selected paths and opens an editor with a context-aware default commit
   message.
+- Previews and safely removes whole shared mirrors that have had no consumers
+  for at least 30 days.
+- Generates native Bash, Zsh, and Fish command completions.
 
 ## Requirements
 
@@ -55,6 +58,33 @@ Verify the installation:
 ```bash
 gits --version
 ```
+
+### Shell completion
+
+The Homebrew formula generates and installs Bash, Zsh, and Fish completion
+files from the same single-file `gits` executable. After installing or
+upgrading, open a new terminal before testing completion.
+
+For Zsh, if completion is not already enabled, initialize Homebrew's shell
+environment and Zsh completion once in the current session:
+
+```bash
+eval "$(brew shellenv)"
+autoload -Uz compinit
+compinit
+```
+
+You can also generate a completion script directly, including outside a Git
+repository:
+
+```bash
+gits completion bash
+gits completion zsh
+gits completion fish
+```
+
+Because both `add` and `admit` are valid commands, `gits ad<Tab>` lists both
+candidates. `gits adm<Tab>` completes directly to `gits admit`.
 
 ### Legacy shell alias conflict
 
@@ -130,7 +160,53 @@ ios : ../clobotics-camera-sdk-ios
 Submodule paths and enabled shared-repository paths are green. The `disabled`
 state and all `gits:` error messages are red.
 
-## Stage and commit changes
+## Clean unused shared mirrors
+
+`gits clean` removes only complete, unused bare mirrors. It never prunes
+individual objects from a mirror that is still referenced by a checkout.
+
+First register every directory tree that may contain projects using the current
+shared repository. Scan roots are canonicalized and stored under the shared
+directory, not in the projects being scanned:
+
+```bash
+gits clean --scan ~/Code/company
+gits clean --scan ~/Code/other-projects
+```
+
+The command scans `objects/info/alternates`, reports each mirror as `used`,
+`waiting`, or `eligible`, and starts a 30-day waiting period for mirrors with no
+consumers. The default command always performs a dry run:
+
+```bash
+gits clean
+```
+
+After a mirror has remained unused for at least 30 days, delete eligible
+mirrors with:
+
+```bash
+gits clean --apply
+```
+
+`--apply` performs a fresh scan before deleting anything. If any registered
+scan root is missing or unreadable, an alternate is invalid, a mirror is not a
+normal bare repository, or the shared repository is locked, the command fails
+closed and deletes nothing. Shared `gits init`, `gits pull`, and `gits clean`
+operations use the same central lock.
+
+Remove a scan root that is permanently retired with:
+
+```bash
+gits clean --forget-scan ~/Code/old-workspace
+```
+
+This only changes clean metadata and never deletes mirrors in the same command.
+All projects using the shared directory must be located under the registered
+scan roots. A project outside those roots cannot be discovered and therefore
+must be covered by another `--scan` root before using `--apply`.
+
+## Admit changes
 
 `gits add` retains standard Git submodule behavior and passes all arguments
 through to `git submodule add`:
@@ -140,24 +216,25 @@ gits add [-q|--quiet] [-b <branch>] [-f|--force] [--name <name>] \
   [--reference <repository>] [--] <repository> [<path>]
 ```
 
-`gits commit` stages the requested paths, opens the Git-configured editor with a
+`admit` describes accepting selected changes into project history. `gits admit`
+stages the requested paths, opens the Git-configured editor with a
 default commit message, and creates a commit after the editor closes:
 
 ```bash
-gits commit scripts
-gits commit scripts/
-gits commit scripts android
-gits commit non-submodule-directory
-gits commit .
+gits admit scripts
+gits admit scripts/
+gits admit scripts android
+gits admit non-submodule-directory
+gits admit .
 ```
 
 A trailing slash on an exact submodule path is normalized, so
-`gits commit scripts` and `gits commit scripts/` behave the same way.
+`gits admit scripts` and `gits admit scripts/` behave the same way.
 
 Use `--all` to stage every submodule declared in `.gitmodules`:
 
 ```bash
-gits commit --all
+gits admit --all
 ```
 
 For a project whose submodules are `scripts`, `android`, and `ios`, this is
@@ -167,7 +244,7 @@ equivalent to:
 git add scripts android ios
 ```
 
-Unlike `git add --all`, `gits commit --all` does not stage non-submodule files.
+Unlike `git add --all`, `gits admit --all` does not stage non-submodule files.
 
 If the staged commit contains only submodule entries, the editor starts with:
 
@@ -182,9 +259,12 @@ feat:
 ```
 
 You can keep, replace, or extend the default text. The commit includes changes
-that were already staged before `gits commit`. If message editing is interrupted
+that were already staged before `gits admit`. If message editing is interrupted
 or cancelled, `gits` restores the index exactly to its pre-command state;
 working tree changes are not discarded.
+
+`gits commit` remains a deprecated compatibility alias for this release and
+prints a migration warning before running the same workflow.
 
 ## How object sharing works
 
@@ -200,6 +280,11 @@ This design reduces repeated network transfers and object storage while
 preserving normal submodule isolation. It does not replace submodule directories
 with symbolic links, and it does not automatically stage the resulting gitlink
 changes in the superproject.
+
+Cleaning works at mirror granularity. A referenced mirror is preserved in full,
+including objects that are not reachable from its current remote refs. This
+protects checkouts that borrow the mirror through Git alternates; object-level
+garbage collection is intentionally outside the scope of `gits clean`.
 
 If multiple submodule paths use the same repository URL, standard mode updates
 and resets every path independently. In shared mode, `gits pull` fetches the
@@ -217,12 +302,18 @@ each updated submodule as modified until you commit the new gitlinks.
 | `gits reset` | Unstage changes in the superproject and initialized submodules. |
 | `gits reset --hard` | Discard tracked changes and restore recorded submodule commits. |
 | `gits add <args...>` | Pass all arguments through to `git submodule add`. |
-| `gits commit <path...>` | Stage paths, edit a default message, and create a commit. |
-| `gits commit --all` | Stage all declared submodules, edit a message, and create a commit. |
+| `gits admit <path...>` | Stage paths, edit a default message, and create a commit. |
+| `gits admit --all` | Stage all declared submodules, edit a message, and create a commit. |
+| `gits commit <path...>` | Deprecated compatibility alias for `gits admit`. |
 | `gits config` | Show the shared path configured for the current project. |
 | `gits config <shared_path>` | Enable or change shared mode for the current project. |
 | `gits config --unset` | Disable shared mode and remove this project's gits-managed alternates. |
 | `gits list` | Show submodules and their shared-cache state. |
+| `gits clean --scan <root>` | Register a project scan root and preview mirror usage. |
+| `gits clean` | Rescan registered roots and preview unused mirrors. |
+| `gits clean --apply` | Delete mirrors that have remained unused for at least 30 days. |
+| `gits clean --forget-scan <root>` | Remove a registered scan root without deleting mirrors. |
+| `gits completion <bash\|zsh\|fish>` | Generate a completion script for the selected shell. |
 | `gits status` | Pass `status` through to `git submodule`. |
 | `gits <args...>` | Pass other arguments through to `git submodule`. |
 | `gits --version` | Print the installed version. |
@@ -231,7 +322,7 @@ each updated submodule as modified until you commit the new gitlinks.
 instead advances each top-level submodule to the branch configured by
 `submodule.<name>.branch`, or to the remote default branch when no branch is
 configured. When this produces new gitlink values, review them and commit them
-with `gits commit <path...>`.
+with `gits admit <path...>`.
 
 Use `gits reset --hard` carefully: it discards tracked changes in both the
 superproject and initialized submodules.

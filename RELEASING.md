@@ -38,10 +38,10 @@ git status --short
 
 ## 1. Prepare the version
 
-Choose the next semantic version. The examples below use `0.2.4`:
+Choose the next semantic version. The examples below use `0.2.5`:
 
 ```bash
-VERSION=0.2.4
+VERSION=0.2.5
 TAG="v${VERSION}"
 ```
 
@@ -142,7 +142,7 @@ curl -fsSL \
 Expected output for the example release:
 
 ```text
-gits 0.2.4
+gits 0.2.5
 ```
 
 ## 5. Verify the Homebrew tap
@@ -172,6 +172,18 @@ brew test gits
 gits --version
 ```
 
+Confirm that the generated completion files are installed and linked:
+
+```bash
+test -e "$(brew --prefix)/etc/bash_completion.d/gits"
+test -e "$(brew --prefix)/share/zsh/site-functions/_gits"
+test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
+```
+
+Open a new Zsh session and verify that `gits adm<Tab>` completes to
+`gits admit`. Because `add` and `admit` share the `ad` prefix,
+`gits ad<Tab>` must display both candidates.
+
 Confirm that Homebrew resolves the formula and dependency correctly:
 
 ```bash
@@ -198,6 +210,17 @@ In disposable Git repositories, verify all of the following:
   to their configured remote branches.
 - `gits config --unset` removes this project's gits-managed alternates without
   deleting shared mirrors or unrelated user-managed alternates.
+- `gits clean --scan <root>` persists the canonical scan root and reports used
+  and waiting mirrors without deleting them.
+- `gits clean --apply` rescans every registered root and deletes only mirrors
+  that have remained unused for at least 30 days.
+- Missing roots, invalid alternates, central lock conflicts, symbolic links,
+  and non-bare repository entries cause clean to fail without deleting mirrors.
+- Referenced mirrors retain unreachable objects; clean does not run object-level
+  garbage collection.
+- `gits completion bash`, `gits completion zsh`, and `gits completion fish`
+  produce non-empty scripts outside a Git repository; an unsupported shell
+  fails with an error.
 - Top-level submodules remain attached to their configured or remote default
   branches after `gits init`, `gits pull`, and `gits reset`.
 - No global `~/.gits-config` file is created.
