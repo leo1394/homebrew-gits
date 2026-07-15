@@ -76,6 +76,7 @@ assert_contains "$("$GITS" --help)" "deprecated alias for gits admit"
 assert_contains "$("$GITS" --help)" "gits clean [--scan <root>...]"
 assert_contains "$("$GITS" --help)" "gits clean --apply"
 assert_contains "$("$GITS" --help)" "gits completion <shell>"
+assert_contains "$(cat "$ROOT/Formula/gits.rb")" 'chmod 0755, bin/"gits"'
 
 outside_git="$TEST_ROOT/outside git"
 bash_completion_file="$TEST_ROOT/gits.bash"

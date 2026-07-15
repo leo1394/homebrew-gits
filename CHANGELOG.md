@@ -6,6 +6,7 @@
 - 新增安全的 `gits clean` dry-run、扫描根登记和 30 天观察期，只删除确认没有 alternate 消费者的完整 mirror。
 - 为共享模式的 `init`、`pull` 和 `clean` 增加中央目录互斥锁；扫描不完整或目录异常时禁止删除。
 - 新增 Bash、Zsh、Fish 自动补全生成命令，并由 Homebrew Formula 自动安装三种补全脚本。
+- 修复 raw 单文件安装后缺少可执行权限，导致 Formula 生成补全时出现 `EACCES` 的问题。
 
 ## 0.2.4 - 2026-07-14
 

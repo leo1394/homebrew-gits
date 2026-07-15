@@ -14,11 +14,13 @@ class Gits < Formula
     else
       bin.install "gits"
     end
+    chmod 0755, bin/"gits"
     generate_completions_from_executable(bin/"gits", "completion")
   end
 
   test do
     assert_match "gits 0.2.5", shell_output("#{bin}/gits --version")
+    assert_predicate bin/"gits", :executable?
     assert_path_exists bash_completion/"gits"
     assert_path_exists zsh_completion/"_gits"
     assert_path_exists fish_completion/"gits.fish"
