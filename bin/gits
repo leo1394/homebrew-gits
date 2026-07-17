@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.7"
+VERSION="0.2.8"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -38,8 +38,9 @@ usage() {
 usage:
   gits init [shared_path]          initialize submodules
                                    shared mode is enabled only when shared_path is given
-  gits pull                        fast-forward the repository and update submodules
-  gits reset [--hard]              reset the repository and its submodules
+  gits pull [<path>...|--all]      fast-forward the repository and update submodules
+  gits reset [--hard] [<path>...|--all]
+                                   reset the repository or selected submodules
   gits add <args...>               pass through to git submodule add
   gits admit <path...|--all>       stage changes, edit a message, and commit
   gits config [shared_path|--unset]
@@ -91,6 +92,13 @@ _gits() {
                 _gits_complete_paths -f "$cur"
             fi
             ;;
+        pull)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--all" -- "$cur") )
+            else
+                _gits_complete_paths -f "$cur"
+            fi
+            ;;
         clean)
             case "$prev" in
                 --scan|--forget-scan)
@@ -104,7 +112,11 @@ _gits() {
             esac
             ;;
         reset)
-            COMPREPLY=( $(compgen -W "--hard" -- "$cur") )
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--hard --all" -- "$cur") )
+            else
+                _gits_complete_paths -f "$cur"
+            fi
             ;;
         config)
             if [ "$prev" != "--unset" ]; then
@@ -178,6 +190,9 @@ _gits() {
         admit)
             _arguments '--all[stage every declared submodule]' '*:path:_files'
             ;;
+        pull)
+            _arguments '--all[update every declared submodule]' '*:submodule path:_files'
+            ;;
         clean)
             _arguments \
                 '*--scan[register a project scan root]:directory:_directories' \
@@ -185,7 +200,10 @@ _gits() {
                 '--forget-scan[remove a registered scan root]:directory:_directories'
             ;;
         reset)
-            _arguments '--hard[discard working tree changes]'
+            _arguments \
+                '--hard[discard working tree changes]' \
+                '--all[reset the repository and every declared submodule]' \
+                '*:submodule path:_files'
             ;;
         config)
             _arguments '--unset[disable shared mode]' '1:shared directory:_directories'
@@ -237,11 +255,16 @@ complete -c gits -n __gits_no_subcommand -s v -l version -d 'Show the installed 
 complete -c gits -n '__fish_seen_subcommand_from admit' -l all -d 'Stage every declared submodule'
 complete -c gits -F -n '__fish_seen_subcommand_from admit'
 
+complete -c gits -n '__fish_seen_subcommand_from pull' -l all -d 'Update every declared submodule'
+complete -c gits -F -n '__fish_seen_subcommand_from pull'
+
 complete -c gits -n '__fish_seen_subcommand_from clean' -l scan -r -a '(__fish_complete_directories)' -d 'Register a project scan root'
 complete -c gits -n '__fish_seen_subcommand_from clean' -l apply -d 'Delete mirrors unused for at least 30 days'
 complete -c gits -n '__fish_seen_subcommand_from clean' -l forget-scan -r -a '(__fish_complete_directories)' -d 'Remove a registered scan root'
 
 complete -c gits -n '__fish_seen_subcommand_from reset' -l hard -d 'Discard working tree changes'
+complete -c gits -n '__fish_seen_subcommand_from reset' -l all -d 'Reset the repository and every declared submodule'
+complete -c gits -F -n '__fish_seen_subcommand_from reset'
 complete -c gits -n '__fish_seen_subcommand_from config' -l unset -d 'Disable shared mode'
 complete -c gits -F -n '__fish_seen_subcommand_from config init'
 
@@ -402,17 +425,20 @@ normal_init() {
 
 normal_pull() {
     local root="$1"
+    shift
     local key
     local path
     local name
 
     print_cmd "git pull --ff-only"
     git -C "$root" pull --ff-only || return 1
+    validate_submodule_paths "$root" "$@" || return 1
     # print_cmd "git submodule sync --recursive"
     git -C "$root" submodule sync --recursive || return 1
 
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
         [ -n "$key" ] || continue
+        submodule_path_selected "$path" "$@" || continue
         name=${key#submodule.}
         name=${name%.path}
         print_cmd "git submodule update --init -- $path"
@@ -643,6 +669,11 @@ shared_update() {
     local root="$1"
     local base="$2"
     local update_remote="${3:-false}"
+    if [ "$#" -ge 3 ]; then
+        shift 3
+    else
+        shift 2
+    fi
     local key
     local path
     local name
@@ -659,6 +690,7 @@ shared_update() {
 
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
         [ -n "$key" ] || continue
+        submodule_path_selected "$path" "$@" || continue
         name=${key#submodule.}
         name=${name%.path}
 
@@ -708,40 +740,70 @@ shared_update() {
 shared_pull() {
     local root="$1"
     local base="$2"
+    shift 2
 
     # print_cmd "git -c fetch.recurseSubmodules=false pull --ff-only"
     git -C "$root" -c fetch.recurseSubmodules=false pull --ff-only || return 1
-    shared_update "$root" "$base" true
+    validate_submodule_paths "$root" "$@" || return 1
+    shared_update "$root" "$base" true "$@"
 }
 
 reset_repository() {
     local root="$1"
     local mode="$2"
+    shift 2
     local key
     local path
     local name
+    local requested
+    local -a paths=()
 
-    if [ -n "$mode" ] && [ "$mode" != "--hard" ]; then
-        error "reset accepts only --hard"
-        return 1
-    fi
+    validate_submodule_paths "$root" "$@" || return 1
+    for requested in "$@"; do
+        paths+=("$(normalize_submodule_path "$requested")")
+    done
 
     if [ "$mode" = "--hard" ]; then
-        print_cmd "git reset --hard"
-        git -C "$root" reset --hard || return 1
-        print_cmd "git submodule foreach --recursive git reset --hard"
-        git -C "$root" submodule foreach --recursive git reset --hard || return 1
-        # print_cmd "git submodule update --init --recursive --force"
-        git -C "$root" submodule update --init --recursive --force || return 1
+        if [ "${#paths[@]}" -gt 0 ]; then
+            print_cmd "git reset -- ${paths[*]}"
+            git -C "$root" reset -- "${paths[@]}" || return 1
+            for path in "${paths[@]}"; do
+                [ -e "$root/$path/.git" ] || continue
+                print_cmd "git -C $path reset --hard"
+                git -C "$root/$path" reset --hard || return 1
+                git -C "$root/$path" submodule foreach --recursive git reset --hard || return 1
+            done
+            print_cmd "git submodule update --init --recursive --force -- ${paths[*]}"
+            git -C "$root" submodule update --init --recursive --force -- "${paths[@]}" || return 1
+        else
+            print_cmd "git reset --hard"
+            git -C "$root" reset --hard || return 1
+            print_cmd "git submodule foreach --recursive git reset --hard"
+            git -C "$root" submodule foreach --recursive git reset --hard || return 1
+            # print_cmd "git submodule update --init --recursive --force"
+            git -C "$root" submodule update --init --recursive --force || return 1
+        fi
     else
-        print_cmd "git reset"
-        git -C "$root" reset || return 1
-        print_cmd "git submodule foreach --recursive git reset"
-        git -C "$root" submodule foreach --recursive git reset || return 1
+        if [ "${#paths[@]}" -gt 0 ]; then
+            print_cmd "git reset -- ${paths[*]}"
+            git -C "$root" reset -- "${paths[@]}" || return 1
+            for path in "${paths[@]}"; do
+                [ -e "$root/$path/.git" ] || continue
+                print_cmd "git -C $path reset"
+                git -C "$root/$path" reset || return 1
+                git -C "$root/$path" submodule foreach --recursive git reset || return 1
+            done
+        else
+            print_cmd "git reset"
+            git -C "$root" reset || return 1
+            print_cmd "git submodule foreach --recursive git reset"
+            git -C "$root" submodule foreach --recursive git reset || return 1
+        fi
     fi
 
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
         [ -n "$key" ] || continue
+        submodule_path_selected "$path" "$@" || continue
         [ -e "$root/$path/.git" ] || continue
         name=${key#submodule.}
         name=${name%.path}
@@ -760,6 +822,44 @@ is_submodule_path() {
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
         [ "$path" = "$candidate" ] && return 0
     done < <(submodule_entries "$root")
+    return 1
+}
+
+normalize_submodule_path() {
+    local candidate="$1"
+
+    while [ "$candidate" != "/" ] && [ "${candidate%/}" != "$candidate" ]; do
+        candidate=${candidate%/}
+    done
+    printf '%s\n' "$candidate"
+}
+
+validate_submodule_paths() {
+    local root="$1"
+    local requested
+    local candidate
+    shift
+
+    for requested in "$@"; do
+        candidate=$(normalize_submodule_path "$requested")
+        if ! is_submodule_path "$root" "$candidate"; then
+            error "unknown submodule path: $requested"
+            return 1
+        fi
+    done
+}
+
+submodule_path_selected() {
+    local path="$1"
+    local requested
+    shift
+
+    [ "$#" -gt 0 ] || return 0
+    for requested in "$@"; do
+        if [ "$path" = "$(normalize_submodule_path "$requested")" ]; then
+            return 0
+        fi
+    done
     return 1
 }
 
@@ -1398,6 +1498,7 @@ clean_repository() {
 main() {
     local root
     local base
+    local mode
 
     case "$1" in
         help|--help|-h)
@@ -1441,23 +1542,36 @@ main() {
             fi
             ;;
         pull)
-            [ -z "$2" ] || {
-                error "pull accepts no arguments"
-                return 1
-            }
+            shift
+            if [ "${1:-}" = "--all" ]; then
+                [ "$#" -eq 1 ] || {
+                    error "pull --all accepts no additional paths"
+                    return 1
+                }
+                shift
+            fi
             base=$(shared_base "$root")
             if [ -n "$base" ]; then
-                run_with_shared_lock "$base" shared_pull "$root" "$base"
+                run_with_shared_lock "$base" shared_pull "$root" "$base" "$@"
             else
-                normal_pull "$root"
+                normal_pull "$root" "$@"
             fi
             ;;
         reset)
-            [ -z "$3" ] || {
-                error "reset accepts at most one argument"
-                return 1
-            }
-            reset_repository "$root" "$2"
+            shift
+            mode=""
+            if [ "${1:-}" = "--hard" ]; then
+                mode="$1"
+                shift
+            fi
+            if [ "${1:-}" = "--all" ]; then
+                [ "$#" -eq 1 ] || {
+                    error "reset --all accepts no additional paths"
+                    return 1
+                }
+                shift
+            fi
+            reset_repository "$root" "$mode" "$@"
             ;;
         admit)
             shift

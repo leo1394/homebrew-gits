@@ -68,9 +68,10 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.7"
+assert_equals "$("$GITS" --version)" "gits 0.2.8"
 help_output=$("$GITS" --help)
 assert_contains "$help_output" "gits init [shared_path]"
+assert_contains "$help_output" "gits pull [<path>...|--all]"
 assert_contains "$help_output" "gits add <args...>"
 assert_contains "$help_output" "gits admit <path...|--all>"
 assert_contains "$help_output" "gits clean [--scan <root>...]"
@@ -144,7 +145,16 @@ bash_reset_completion=$(/bin/bash -c '
     _gits
     printf "%s" "${COMPREPLY[*]}"
 ' _ "$bash_completion_file")
-assert_equals "$bash_reset_completion" "--hard"
+assert_equals "$bash_reset_completion" "--hard --all"
+
+bash_pull_completion=$(/bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits pull --)
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_equals "$bash_pull_completion" "--all"
 
 bash_removed_commands=$(/bin/bash -c '
     source "$1"
@@ -367,16 +377,75 @@ assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-normal" apps/main_app/
 assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-normal" apps/companion_app/scripts
 assert_equals "$(git -C "$TEST_ROOT/duplicate-normal" status --porcelain)" ""
 
-echo "dirty main" >> "$TEST_ROOT/duplicate-normal/apps/main_app/scripts/content.txt"
-echo "dirty companion" >> "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts/content.txt"
+echo "selected normal pull" >> "$TEST_ROOT/duplicate-build-source/content.txt"
+git -C "$TEST_ROOT/duplicate-build-source" commit -qam "selected normal pull"
+git -C "$TEST_ROOT/duplicate-build-source" push -q origin main
+selected_normal_commit=$(git -C "$TEST_ROOT/duplicate-build-source" rev-parse HEAD)
+companion_before_selected_pull=$(git -C "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts" rev-parse HEAD)
 (
     cd "$TEST_ROOT/duplicate-normal"
-    "$GITS" reset --hard >/dev/null
+    "$GITS" pull apps/main_app/scripts/ >/dev/null
 )
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" rev-parse HEAD)" "$selected_normal_commit"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts" rev-parse HEAD)" "$companion_before_selected_pull"
+
+invalid_pull_output=$(
+    cd "$TEST_ROOT/duplicate-normal"
+    "$GITS" pull missing-submodule 2>&1 || true
+)
+assert_contains "$invalid_pull_output" "unknown submodule path: missing-submodule"
+
+echo "multiple normal pull" >> "$TEST_ROOT/duplicate-build-source/content.txt"
+git -C "$TEST_ROOT/duplicate-build-source" commit -qam "multiple normal pull"
+git -C "$TEST_ROOT/duplicate-build-source" push -q origin main
+multiple_normal_commit=$(git -C "$TEST_ROOT/duplicate-build-source" rev-parse HEAD)
+(
+    cd "$TEST_ROOT/duplicate-normal"
+    "$GITS" pull apps/main_app/scripts apps/companion_app/scripts >/dev/null
+)
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" rev-parse HEAD)" "$multiple_normal_commit"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts" rev-parse HEAD)" "$multiple_normal_commit"
+
+echo "dirty root" >> "$TEST_ROOT/duplicate-normal/README.md"
+echo "dirty main" >> "$TEST_ROOT/duplicate-normal/apps/main_app/scripts/content.txt"
+echo "dirty companion" >> "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts/content.txt"
+companion_before_selected_reset=$(git -C "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts" rev-parse HEAD)
+(
+    cd "$TEST_ROOT/duplicate-normal"
+    "$GITS" reset --hard apps/main_app/scripts/ >/dev/null
+)
+assert_contains "$(cat "$TEST_ROOT/duplicate-normal/README.md")" "dirty root"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" status --porcelain)" ""
+assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-normal" apps/main_app/scripts
+assert_contains "$(git -C "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts" status --porcelain)" "content.txt"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts" rev-parse HEAD)" "$companion_before_selected_reset"
+
+(
+    cd "$TEST_ROOT/duplicate-normal"
+    "$GITS" reset --hard --all >/dev/null
+)
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal" status --porcelain)" ""
 assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" status --porcelain)" ""
 assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts" status --porcelain)" ""
 assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-normal" apps/main_app/scripts
 assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-normal" apps/companion_app/scripts
+
+echo "staged main" >> "$TEST_ROOT/duplicate-normal/apps/main_app/scripts/content.txt"
+echo "staged companion" >> "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts/content.txt"
+git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" add content.txt
+git -C "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts" add content.txt
+(
+    cd "$TEST_ROOT/duplicate-normal"
+    "$GITS" reset apps/main_app/scripts >/dev/null
+)
+git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" diff --cached --quiet || fail "selected reset did not unstage the selected submodule"
+if git -C "$TEST_ROOT/duplicate-normal/apps/companion_app/scripts" diff --cached --quiet; then
+    fail "selected reset unstaged an unselected submodule"
+fi
+(
+    cd "$TEST_ROOT/duplicate-normal"
+    "$GITS" reset --hard >/dev/null
+)
 
 git clone -q "$DUPLICATE_REMOTES/store-layout" "$TEST_ROOT/duplicate-shared-project"
 duplicate_init_output=$(
@@ -425,6 +494,29 @@ assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-shared-project" apps/c
 assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project" status --porcelain)" ""
 
 assert_equals "$(cat "$main_alternate")" "$(cat "$companion_alternate")"
+
+echo "selected shared pull" >> "$TEST_ROOT/duplicate-build-source/content.txt"
+git -C "$TEST_ROOT/duplicate-build-source" commit -qam "selected shared pull"
+git -C "$TEST_ROOT/duplicate-build-source" push -q origin main
+selected_shared_commit=$(git -C "$TEST_ROOT/duplicate-build-source" rev-parse HEAD)
+companion_before_shared_pull=$(git -C "$TEST_ROOT/duplicate-shared-project/apps/companion_app/scripts" rev-parse HEAD)
+(
+    cd "$TEST_ROOT/duplicate-shared-project"
+    "$GITS" pull apps/main_app/scripts/ >/dev/null
+)
+assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" rev-parse HEAD)" "$selected_shared_commit"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project/apps/companion_app/scripts" rev-parse HEAD)" "$companion_before_shared_pull"
+
+echo "all shared pull" >> "$TEST_ROOT/duplicate-build-source/content.txt"
+git -C "$TEST_ROOT/duplicate-build-source" commit -qam "all shared pull"
+git -C "$TEST_ROOT/duplicate-build-source" push -q origin main
+all_shared_commit=$(git -C "$TEST_ROOT/duplicate-build-source" rev-parse HEAD)
+(
+    cd "$TEST_ROOT/duplicate-shared-project"
+    "$GITS" pull --all >/dev/null
+)
+assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" rev-parse HEAD)" "$all_shared_commit"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project/apps/companion_app/scripts" rev-parse HEAD)" "$all_shared_commit"
 
 CLEAN_PROJECT="$TEST_ROOT/clean-control"
 CLEAN_SHARED="$TEST_ROOT/clean shared"

@@ -104,6 +104,8 @@ enable shared mode:
 cd /path/to/project
 gits init
 gits pull
+gits pull scripts/
+gits pull android ios
 ```
 
 ### Project-scoped shared mode
@@ -285,9 +287,14 @@ each updated submodule as modified until you commit the new gitlinks.
 | --- | --- |
 | `gits init` | Synchronize and initialize submodules without enabling shared mode. |
 | `gits init <shared_path>` | Enable shared mode for this project, then initialize submodules. |
-| `gits pull` | Fast-forward the superproject, then advance submodules to their remote branches. |
-| `gits reset` | Unstage changes in the superproject and initialized submodules. |
-| `gits reset --hard` | Discard tracked changes and restore recorded submodule commits. |
+| `gits pull` | Fast-forward the superproject, then advance all submodules to their remote branches. |
+| `gits pull <path...>` | Fast-forward the superproject, then advance only the selected submodules. A trailing `/` is optional. |
+| `gits pull --all` | Explicitly advance all submodules; equivalent to `gits pull`. |
+| `gits reset` | Unstage changes in the superproject and all initialized submodules. |
+| `gits reset <path...>` | Unstage changes only for the selected submodules. A trailing `/` is optional. |
+| `gits reset --hard` | Discard tracked changes and restore all recorded submodule commits. |
+| `gits reset --hard <path...>` | Discard changes and restore only the selected submodules. |
+| `gits reset [--hard] --all` | Explicitly reset the repository and all submodules. |
 | `gits add <args...>` | Pass all arguments through to `git submodule add`. |
 | `gits admit <path...>` | Stage paths, edit a default message, and create a commit. |
 | `gits admit --all` | Stage all declared submodules, edit a message, and create a commit. |
@@ -304,13 +311,15 @@ each updated submodule as modified until you commit the new gitlinks.
 | `gits --version` | Print the installed version. |
 
 `gits init` checks out the commits recorded by the superproject. `gits pull`
-instead advances each top-level submodule to the branch configured by
+without paths advances each top-level submodule to the branch configured by
 `submodule.<name>.branch`, or to the remote default branch when no branch is
-configured. When this produces new gitlink values, review them and commit them
-with `gits admit <path...>`.
+configured. Pass one or more paths to update only those submodules; `scripts`
+and `scripts/` select the same path. When this produces new gitlink values,
+review them and commit them with `gits admit <path...>`.
 
-Use `gits reset --hard` carefully: it discards tracked changes in both the
-superproject and initialized submodules.
+Use `gits reset --hard` carefully: without paths it discards tracked changes in
+both the superproject and initialized submodules. With paths, ordinary files in
+the superproject and unselected submodules are left unchanged.
 
 ## Development
 

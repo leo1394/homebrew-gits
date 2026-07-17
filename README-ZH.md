@@ -58,6 +58,8 @@ Apple Silicon Mac 的第一条结果应为 `/opt/homebrew/bin/gits`，Intel Mac 
 cd /path/to/project
 gits init
 gits pull
+gits pull scripts/
+gits pull android ios
 ```
 
 只有在当前项目中明确传入中央目录时，才会为该项目启用共享模式：
@@ -101,12 +103,16 @@ gits config --unset            # 为当前项目关闭共享模式
 gits list                      # 查看子模块及缓存状态
 gits reset                     # 取消暂存根仓库和子模块改动
 gits reset --hard              # 丢弃根仓库和子模块改动
+gits reset scripts/            # 仅取消暂存 scripts 子模块改动
+gits reset --hard android ios  # 仅丢弃并恢复指定子模块
 gits status                    # 等价于 git submodule status
 ```
 
 `gits config --unset` 会删除当前项目所有由 gits 管理的 alternate 引用，包括旧共享目录残留，但不会删除中央目录中的裸仓库，因为它们可能仍被其他项目使用。用户自行配置的其他 alternate 会保留。
 
-`gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only` 更新父仓库，然后将每个顶层子模块推进到 `submodule.<name>.branch` 配置的远端分支；未配置 branch 时使用远端默认分支。产生新的 gitlink 后，可检查改动并通过 `gits admit <path...>` 提交。
+`gits reset` 和 `gits reset --hard` 未指定路径时处理父仓库及全部子模块，也可指定一个或多个子模块。指定路径时只处理对应子模块及其 gitlink，不影响父仓库普通文件和其他子模块；路径末尾的 `/` 可省略。`gits reset --all` 和 `gits reset --hard --all` 可显式选择全部子模块。
+
+`gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only` 更新父仓库；未指定路径时更新全部顶层子模块，也可以通过 `gits pull scripts`、`gits pull scripts/` 或 `gits pull android ios` 只更新指定子模块。路径末尾的 `/` 可省略，`gits pull --all` 与无参数的 `gits pull` 等效。子模块会推进到 `submodule.<name>.branch` 配置的远端分支；未配置 branch 时使用远端默认分支。产生新的 gitlink 后，可检查改动并通过 `gits admit <path...>` 提交。
 
 ## Clean：安全清理闲置 mirror
 
