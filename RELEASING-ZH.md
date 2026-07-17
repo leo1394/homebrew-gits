@@ -49,8 +49,8 @@ test -e "$(brew --prefix)/share/zsh/site-functions/_gits"
 test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
 ```
 
-重新打开 Zsh，确认 `gits adm<Tab>` 直接补全为 `gits admit`，并且
-`gits ad<Tab>` 同时列出 `add` 和 `admit`。
+重新打开 Zsh，确认 `gits adm<Tab>` 直接补全为 `gits admit`，
+`gits ad<Tab>` 同时列出 `add` 和 `admit`，且已移除命令不会成为候选。
 
 ## 4. 发布检查
 
@@ -66,5 +66,4 @@ test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
 - 确认无人引用 mirror 首次进入 30 天观察期，只有满 30 天且 `gits clean --apply` 二次扫描仍无人引用时才删除。
 - 确认扫描根缺失、alternate 无效、锁冲突、符号链接或非 bare mirror 会阻止本次全部删除。
 - 确认仍被引用的 mirror 及其中 unreachable object 均被保留。
-- 在 Git 仓库之外确认 `gits completion bash`、`gits completion zsh` 和
-  `gits completion fish` 均输出非空脚本，未知 shell 返回红色错误。
+- 确认 Formula 安装的 Bash、Zsh、Fish 补全文件非空，且补全候选不包含已移除命令。

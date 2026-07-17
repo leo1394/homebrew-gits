@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.6"
+VERSION="0.2.7"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -42,14 +42,12 @@ usage:
   gits reset [--hard]              reset the repository and its submodules
   gits add <args...>               pass through to git submodule add
   gits admit <path...|--all>       stage changes, edit a message, and commit
-  gits commit <path...|--all>      deprecated alias for gits admit
   gits config [shared_path|--unset]
                                    show, enable, or disable shared mode for this repository
   gits list                        show submodules and shared modules repository state
   gits clean [--scan <root>...]    preview unused shared mirrors
   gits clean --apply               delete mirrors unused for at least 30 days
   gits clean --forget-scan <root>  remove a registered scan root
-  gits completion <shell>          generate completion for bash, zsh, or fish
   gits <args...>                   pass through to git submodule <args...>
   gits --version                   show the installed version
 EOF
@@ -80,13 +78,13 @@ _gits() {
     fi
 
     if [ "$COMP_CWORD" -eq 1 ]; then
-        COMPREPLY=( $(compgen -W "init pull reset add admit commit config list clean completion status update deinit foreach summary sync set-branch set-url absorbgitdirs help --help -h --version -v" -- "$cur") )
+        COMPREPLY=( $(compgen -W "init pull reset add admit config list clean status update deinit foreach summary sync set-branch set-url absorbgitdirs help --help -h --version -v" -- "$cur") )
         return 0
     fi
 
     subcommand="${COMP_WORDS[1]}"
     case "$subcommand" in
-        admit|commit)
+        admit)
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=( $(compgen -W "--all" -- "$cur") )
             else
@@ -133,9 +131,6 @@ _gits() {
                     ;;
             esac
             ;;
-        completion)
-            COMPREPLY=( $(compgen -W "bash zsh fish" -- "$cur") )
-            ;;
     esac
 }
 
@@ -155,11 +150,9 @@ _gits() {
         'reset:reset the repository and its submodules'
         'add:pass through to git submodule add'
         'admit:stage changes, edit a message, and commit'
-        'commit:deprecated alias for admit'
         'config:show, enable, or disable shared mode'
         'list:show submodules and shared repository state'
         'clean:preview or remove unused shared mirrors'
-        'completion:generate shell completion'
         'status:pass through to git submodule status'
         'update:pass through to git submodule update'
         'deinit:pass through to git submodule deinit'
@@ -182,7 +175,7 @@ _gits() {
     fi
 
     case "$words[2]" in
-        admit|commit)
+        admit)
             _arguments '--all[stage every declared submodule]' '*:path:_files'
             ;;
         clean)
@@ -215,9 +208,6 @@ _gits() {
                 '1:repository:_files' \
                 '2:path:_files'
             ;;
-        completion)
-            _arguments '1:shell:(bash zsh fish)'
-            ;;
     esac
 }
 
@@ -236,18 +226,16 @@ complete -c gits -f -n __gits_no_subcommand -a pull -d 'Fast-forward the reposit
 complete -c gits -f -n __gits_no_subcommand -a reset -d 'Reset the repository and its submodules'
 complete -c gits -f -n __gits_no_subcommand -a add -d 'Pass through to git submodule add'
 complete -c gits -f -n __gits_no_subcommand -a admit -d 'Stage changes, edit a message, and commit'
-complete -c gits -f -n __gits_no_subcommand -a commit -d 'Deprecated alias for admit'
 complete -c gits -f -n __gits_no_subcommand -a config -d 'Show, enable, or disable shared mode'
 complete -c gits -f -n __gits_no_subcommand -a list -d 'Show submodules and shared repository state'
 complete -c gits -f -n __gits_no_subcommand -a clean -d 'Preview or remove unused shared mirrors'
-complete -c gits -f -n __gits_no_subcommand -a completion -d 'Generate shell completion'
 complete -c gits -f -n __gits_no_subcommand -a 'status update deinit foreach summary sync set-branch set-url absorbgitdirs' -d 'Pass through to git submodule'
 complete -c gits -f -n __gits_no_subcommand -a help -d 'Show help'
 complete -c gits -n __gits_no_subcommand -s h -l help -d 'Show help'
 complete -c gits -n __gits_no_subcommand -s v -l version -d 'Show the installed version'
 
-complete -c gits -n '__fish_seen_subcommand_from admit commit' -l all -d 'Stage every declared submodule'
-complete -c gits -F -n '__fish_seen_subcommand_from admit commit'
+complete -c gits -n '__fish_seen_subcommand_from admit' -l all -d 'Stage every declared submodule'
+complete -c gits -F -n '__fish_seen_subcommand_from admit'
 
 complete -c gits -n '__fish_seen_subcommand_from clean' -l scan -r -a '(__fish_complete_directories)' -d 'Register a project scan root'
 complete -c gits -n '__fish_seen_subcommand_from clean' -l apply -d 'Delete mirrors unused for at least 30 days'
@@ -268,7 +256,6 @@ complete -c gits -n '__fish_seen_subcommand_from add' -l progress -d 'Force prog
 complete -c gits -n '__fish_seen_subcommand_from add' -l no-progress -d 'Disable progress reporting'
 complete -c gits -F -n '__fish_seen_subcommand_from add'
 
-complete -c gits -f -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'
 EOF
             ;;
         *)
@@ -1421,9 +1408,9 @@ main() {
             echo "gits $VERSION"
             return 0
             ;;
-        completion)
+        __completion)
             [ "$#" -eq 2 ] || {
-                error "completion requires exactly one shell: bash, zsh, or fish"
+                error "internal completion requires exactly one shell"
                 return 1
             }
             completion_script "$2"
@@ -1473,11 +1460,6 @@ main() {
             reset_repository "$root" "$2"
             ;;
         admit)
-            shift
-            admit_paths "$root" "$@"
-            ;;
-        commit)
-            error "'commit' is deprecated; use 'gits admit' instead"
             shift
             admit_paths "$root" "$@"
             ;;

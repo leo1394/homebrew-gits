@@ -23,8 +23,8 @@ brew install --HEAD gits
 
 ### Shell 自动补全
 
-Homebrew Formula 会从同一个 `gits` 单文件自动生成并安装 Bash、Zsh、Fish
-补全脚本。安装或升级后请重新打开终端，再测试 Tab 补全。
+Homebrew Formula 会自动安装 Bash、Zsh、Fish 补全脚本。安装或升级后请重新
+打开终端，再测试 Tab 补全。
 
 如果 Zsh 尚未启用补全，可在当前会话执行：
 
@@ -32,14 +32,6 @@ Homebrew Formula 会从同一个 `gits` 单文件自动生成并安装 Bash、Zs
 eval "$(brew shellenv)"
 autoload -Uz compinit
 compinit
-```
-
-也可以在 Git 仓库之外直接生成指定 shell 的补全脚本：
-
-```bash
-gits completion bash
-gits completion zsh
-gits completion fish
 ```
 
 由于 `add` 和 `admit` 都是合法命令，输入 `gits ad<Tab>` 会列出两者；
@@ -199,8 +191,6 @@ feat:
 ```
 
 用户可以保留、替换或补充默认内容。commit 也会包含执行 `gits admit` 前已经暂存的改动。如果提交信息编辑被中断或取消，`gits` 会将暂存区完整恢复到命令执行前的状态，不会丢弃工作区改动。
-
-`gits commit` 在本版本中暂时保留为兼容别名；执行时会输出弃用提示，然后运行相同的 admit 流程。
 
 ## 开发与发布
 

@@ -23,7 +23,7 @@ current project only when you explicitly provide a shared path.
   message.
 - Previews and safely removes whole shared mirrors that have had no consumers
   for at least 30 days.
-- Generates native Bash, Zsh, and Fish command completions.
+- Installs native Bash, Zsh, and Fish command completions through Homebrew.
 
 ## Requirements
 
@@ -61,9 +61,8 @@ gits --version
 
 ### Shell completion
 
-The Homebrew formula generates and installs Bash, Zsh, and Fish completion
-files from the same single-file `gits` executable. After installing or
-upgrading, open a new terminal before testing completion.
+The Homebrew formula installs Bash, Zsh, and Fish completion files. After
+installing or upgrading, open a new terminal before testing completion.
 
 For Zsh, if completion is not already enabled, initialize Homebrew's shell
 environment and Zsh completion once in the current session:
@@ -72,15 +71,6 @@ environment and Zsh completion once in the current session:
 eval "$(brew shellenv)"
 autoload -Uz compinit
 compinit
-```
-
-You can also generate a completion script directly, including outside a Git
-repository:
-
-```bash
-gits completion bash
-gits completion zsh
-gits completion fish
 ```
 
 Because both `add` and `admit` are valid commands, `gits ad<Tab>` lists both
@@ -263,9 +253,6 @@ that were already staged before `gits admit`. If message editing is interrupted
 or cancelled, `gits` restores the index exactly to its pre-command state;
 working tree changes are not discarded.
 
-`gits commit` remains a deprecated compatibility alias for this release and
-prints a migration warning before running the same workflow.
-
 ## How object sharing works
 
 The shared directory contains one bare mirror for each distinct submodule URL.
@@ -304,7 +291,6 @@ each updated submodule as modified until you commit the new gitlinks.
 | `gits add <args...>` | Pass all arguments through to `git submodule add`. |
 | `gits admit <path...>` | Stage paths, edit a default message, and create a commit. |
 | `gits admit --all` | Stage all declared submodules, edit a message, and create a commit. |
-| `gits commit <path...>` | Deprecated compatibility alias for `gits admit`. |
 | `gits config` | Show the shared path configured for the current project. |
 | `gits config <shared_path>` | Enable or change shared mode for the current project. |
 | `gits config --unset` | Disable shared mode and remove this project's gits-managed alternates. |
@@ -313,7 +299,6 @@ each updated submodule as modified until you commit the new gitlinks.
 | `gits clean` | Rescan registered roots and preview unused mirrors. |
 | `gits clean --apply` | Delete mirrors that have remained unused for at least 30 days. |
 | `gits clean --forget-scan <root>` | Remove a registered scan root without deleting mirrors. |
-| `gits completion <bash\|zsh\|fish>` | Generate a completion script for the selected shell. |
 | `gits status` | Pass `status` through to `git submodule`. |
 | `gits <args...>` | Pass other arguments through to `git submodule`. |
 | `gits --version` | Print the installed version. |

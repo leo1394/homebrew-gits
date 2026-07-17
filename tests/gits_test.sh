@@ -68,14 +68,15 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.6"
-assert_contains "$("$GITS" --help)" "gits init [shared_path]"
-assert_contains "$("$GITS" --help)" "gits add <args...>"
-assert_contains "$("$GITS" --help)" "gits admit <path...|--all>"
-assert_contains "$("$GITS" --help)" "deprecated alias for gits admit"
-assert_contains "$("$GITS" --help)" "gits clean [--scan <root>...]"
-assert_contains "$("$GITS" --help)" "gits clean --apply"
-assert_contains "$("$GITS" --help)" "gits completion <shell>"
+assert_equals "$("$GITS" --version)" "gits 0.2.7"
+help_output=$("$GITS" --help)
+assert_contains "$help_output" "gits init [shared_path]"
+assert_contains "$help_output" "gits add <args...>"
+assert_contains "$help_output" "gits admit <path...|--all>"
+assert_contains "$help_output" "gits clean [--scan <root>...]"
+assert_contains "$help_output" "gits clean --apply"
+assert_not_contains "$help_output" "gits commit"
+assert_not_contains "$help_output" "gits completion"
 assert_contains "$(cat "$ROOT/Formula/gits.rb")" 'chmod 0755, bin/"gits"'
 
 outside_git="$TEST_ROOT/outside git"
@@ -85,9 +86,9 @@ fish_completion_file="$TEST_ROOT/gits.fish"
 mkdir "$outside_git"
 (
     cd "$outside_git"
-    "$GITS" completion bash > "$bash_completion_file"
-    "$GITS" completion zsh > "$zsh_completion_file"
-    "$GITS" completion fish > "$fish_completion_file"
+    "$GITS" __completion bash > "$bash_completion_file"
+    "$GITS" __completion zsh > "$zsh_completion_file"
+    "$GITS" __completion fish > "$fish_completion_file"
 )
 [ -s "$bash_completion_file" ] || fail "bash completion output is empty"
 [ -s "$zsh_completion_file" ] || fail "zsh completion output is empty"
@@ -102,8 +103,12 @@ fi
 assert_contains "$(cat "$bash_completion_file")" "complete -F _gits gits"
 assert_contains "$(cat "$zsh_completion_file")" "compdef _gits gits"
 assert_contains "$(cat "$zsh_completion_file")" "'admit:stage changes"
+assert_not_contains "$(cat "$zsh_completion_file")" "'commit:"
+assert_not_contains "$(cat "$zsh_completion_file")" "'completion:"
 assert_contains "$(cat "$fish_completion_file")" "complete -c gits"
 assert_contains "$(cat "$fish_completion_file")" "-a admit"
+assert_not_contains "$(cat "$fish_completion_file")" "-a commit"
+assert_not_contains "$(cat "$fish_completion_file")" "-a completion"
 
 bash_adm_completion=$(/bin/bash -c '
     source "$1"
@@ -141,21 +146,27 @@ bash_reset_completion=$(/bin/bash -c '
 ' _ "$bash_completion_file")
 assert_equals "$bash_reset_completion" "--hard"
 
-bash_shell_completion=$(/bin/bash -c '
+bash_removed_commands=$(/bin/bash -c '
     source "$1"
-    COMP_WORDS=(gits completion z)
-    COMP_CWORD=2
+    COMP_WORDS=(gits com)
+    COMP_CWORD=1
     _gits
     printf "%s" "${COMPREPLY[*]}"
 ' _ "$bash_completion_file")
-assert_equals "$bash_shell_completion" "zsh"
+assert_equals "$bash_removed_commands" ""
 
-if "$GITS" completion powershell > "$TEST_ROOT/invalid-completion.out" 2>&1; then
+if "$GITS" __completion powershell > "$TEST_ROOT/invalid-completion.out" 2>&1; then
     fail "unknown completion shell should fail"
 fi
 invalid_completion_output=$(cat "$TEST_ROOT/invalid-completion.out")
 assert_contains "$invalid_completion_output" "unsupported completion shell 'powershell'"
 assert_contains "$invalid_completion_output" $'\033[1;31mgits: unsupported completion shell'
+
+removed_completion_output=$(
+    cd "$TEST_ROOT"
+    "$GITS" completion bash 2>&1 || true
+)
+assert_contains "$removed_completion_output" "not a Git repository"
 
 formula_sha=$(sed -n 's/^  sha256 "\([0-9a-f]*\)"/\1/p' "$ROOT/Formula/gits.rb")
 script_sha=$(shasum -a 256 "$GITS" | awk '{print $1}')
@@ -405,8 +416,9 @@ duplicate_pull_output=$(
     cd "$TEST_ROOT/duplicate-shared-project"
     "$GITS" pull 2>&1
 )
-duplicate_pull_fetches=$(printf '%s\n' "$duplicate_pull_output" | grep -c 'remote update --prune')
-assert_equals "$duplicate_pull_fetches" "1"
+shared_mirror=$(dirname "$canonical_objects")
+shared_expected_commit=$(git -C "$TEST_ROOT/duplicate-build-source" rev-parse HEAD)
+assert_equals "$(git --git-dir="$shared_mirror" rev-parse refs/heads/main)" "$shared_expected_commit"
 assert_not_contains "$duplicate_pull_output" "Fetching submodule"
 assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-shared-project" apps/main_app/scripts
 assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-shared-project" apps/companion_app/scripts
@@ -640,13 +652,16 @@ echo "custom update" >> "$TEST_ROOT/add-project/root.txt"
 )
 assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "feat: custom detail"
 
-echo "legacy alias update" >> "$TEST_ROOT/add-project/root.txt"
-legacy_commit_output=$(
+before_removed_commit=$(git -C "$TEST_ROOT/add-project" rev-parse HEAD)
+if (
     cd "$TEST_ROOT/add-project"
-    GIT_EDITOR="$EDITOR_ACCEPT" "$GITS" commit root.txt 2>&1
-)
-assert_contains "$legacy_commit_output" "'commit' is deprecated; use 'gits admit' instead"
-assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "feat:"
+    "$GITS" commit root.txt > "$TEST_ROOT/removed-commit.out" 2>&1
+); then
+    fail "removed commit command unexpectedly succeeded"
+fi
+removed_commit_output=$(cat "$TEST_ROOT/removed-commit.out")
+assert_not_contains "$removed_commit_output" "deprecated; use 'gits admit'"
+assert_equals "$(git -C "$TEST_ROOT/add-project" rev-parse HEAD)" "$before_removed_commit"
 
 echo "previously staged" >> "$TEST_ROOT/add-project/root.txt"
 git -C "$TEST_ROOT/add-project" add root.txt

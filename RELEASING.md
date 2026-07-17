@@ -181,8 +181,8 @@ test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
 ```
 
 Open a new Zsh session and verify that `gits adm<Tab>` completes to
-`gits admit`. Because `add` and `admit` share the `ad` prefix,
-`gits ad<Tab>` must display both candidates.
+`gits admit`. `gits ad<Tab>` must display both `add` and `admit`; removed
+commands must not appear as candidates.
 
 Confirm that Homebrew resolves the formula and dependency correctly:
 
@@ -218,9 +218,8 @@ In disposable Git repositories, verify all of the following:
   and non-bare repository entries cause clean to fail without deleting mirrors.
 - Referenced mirrors retain unreachable objects; clean does not run object-level
   garbage collection.
-- `gits completion bash`, `gits completion zsh`, and `gits completion fish`
-  produce non-empty scripts outside a Git repository; an unsupported shell
-  fails with an error.
+- The Formula installs non-empty Bash, Zsh, and Fish completion files, and the
+  generated command candidates exclude removed commands.
 - Top-level submodules remain attached to their configured or remote default
   branches after `gits init`, `gits pull`, and `gits reset`.
 - No global `~/.gits-config` file is created.

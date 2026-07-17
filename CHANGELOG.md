@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.7 - 2026-07-17
+
+- 移除已弃用的 `gits commit` 兼容命令，统一使用 `gits admit`。
+- 移除用户可见的 `gits completion` 命令；Homebrew 仍会自动安装 Bash、Zsh、Fish 补全脚本。
+
 ## 0.2.6 - 2026-07-15
 - 优化gits日志输出
 
