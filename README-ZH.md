@@ -114,38 +114,45 @@ gits status                    # 等价于 git submodule status
 
 `gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only` 更新父仓库；未指定路径时更新全部顶层子模块，也可以通过 `gits pull scripts`、`gits pull scripts/` 或 `gits pull android ios` 只更新指定子模块。路径末尾的 `/` 可省略，`gits pull --all` 与无参数的 `gits pull` 等效。子模块会推进到 `submodule.<name>.branch` 配置的远端分支；未配置 branch 时使用远端默认分支。产生新的 gitlink 后，可检查改动并通过 `gits admit <path...>` 提交。
 
-## Clean：安全清理闲置 mirror
+## Cleanup：安全清理闲置 mirror
 
-`gits clean` 只会清理整个无人引用的 bare mirror，不会删除仍被 checkout 引用的 mirror 中的单个 object。
+`gits cleanup` 只会清理整个无人引用的 bare mirror，不会删除仍被 checkout 引用的 mirror 中的单个 object。
 
 首次使用时，需要登记所有可能包含 shared-modules 消费项目的目录树。扫描根目录会规范化并持久化到中央目录的 `.gits` 元数据中，不会修改被扫描项目：
 
 ```bash
-gits clean --scan ~/Code/clobotics
-gits clean --scan ~/Code/other-projects
+gits cleanup --append ~/Code/clobotics
+gits cleanup --append ~/Code/other-projects
 ```
 
-扫描会检查各项目的 `objects/info/alternates`，将 mirror 标记为 `used`、`waiting` 或 `eligible`。首次发现无人引用的 mirror 后进入 30 天观察期。默认命令始终只预览：
+`--append` 只增加登记，不会扫描或删除 mirror。查看当前登记清单：
 
 ```bash
-gits clean
+gits cleanup --list
 ```
 
-连续闲置至少 30 天后，使用以下命令删除 eligible mirror：
+扫描会先输出当前已登记的全部扫描范围路径，再检查各项目的 `objects/info/alternates`，将 mirror 标记为 `used`、`waiting` 或 `eligible`。首次发现无人引用的 mirror 后进入 30 天观察期。只预览时执行：
 
 ```bash
-gits clean --apply
+gits cleanup --dry-run
 ```
 
-`--apply` 删除前一定会重新扫描。任一扫描根目录缺失或不可读、alternate 无效、mirror 不是普通 bare repository，或者中央目录已被其他 gits 操作锁定时，命令都会 fail closed，不删除任何 mirror。共享模式下的 `gits init`、`gits pull` 和 `gits clean` 使用同一把中央锁。
+连续闲置至少 30 天后，缺省命令会删除 eligible mirror；`--apply` 是语义相同的显式写法：
+
+```bash
+gits cleanup
+gits cleanup --apply
+```
+
+缺省命令和 `--apply` 删除前一定会重新扫描。任一扫描根目录缺失或不可读、alternate 无效、mirror 不是普通 bare repository，或者中央目录已被其他 gits 操作锁定时，命令都会 fail closed，不删除任何 mirror。共享模式下的 `gits init`、`gits pull` 和 `gits cleanup` 使用同一把中央锁。
 
 永久停用某个扫描根目录时可执行：
 
 ```bash
-gits clean --forget-scan ~/Code/old-workspace
+gits cleanup --remove ~/Code/old-workspace
 ```
 
-该命令只移除 clean 元数据，不会同时删除 mirror。所有使用同一 shared-modules 的项目都必须位于已登记扫描根目录下；范围之外的项目无法被发现，因此执行 `--apply` 前必须通过另一个 `--scan` 根目录覆盖它们。
+该命令只移除 cleanup 元数据，不会同时删除 mirror。所有使用同一 shared-modules 的项目都必须位于已登记扫描根目录下；范围之外的项目无法被发现，因此执行清理前必须通过另一个 `--append` 根目录覆盖它们。
 
 首版以整个 mirror 为最小回收单位。只要 mirror 仍有消费者，就会完整保留，包括当前远端 refs 已不可达的 object；精确 object 级垃圾回收不在本版本范围内。
 

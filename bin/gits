@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.8"
+VERSION="0.2.9"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -46,9 +46,11 @@ usage:
   gits config [shared_path|--unset]
                                    show, enable, or disable shared mode for this repository
   gits list                        show submodules and shared modules repository state
-  gits clean [--scan <root>...]    preview unused shared mirrors
-  gits clean --apply               delete mirrors unused for at least 30 days
-  gits clean --forget-scan <root>  remove a registered scan root
+  gits cleanup                      delete eligible unused shared mirrors
+  gits cleanup --dry-run            preview unused shared mirrors
+  gits cleanup --list               list registered scan roots
+  gits cleanup --append <root>...   register scan roots
+  gits cleanup --remove <root>      remove a registered scan root
   gits <args...>                   pass through to git submodule <args...>
   gits --version                   show the installed version
 EOF
@@ -79,7 +81,7 @@ _gits() {
     fi
 
     if [ "$COMP_CWORD" -eq 1 ]; then
-        COMPREPLY=( $(compgen -W "init pull reset add admit config list clean status update deinit foreach summary sync set-branch set-url absorbgitdirs help --help -h --version -v" -- "$cur") )
+        COMPREPLY=( $(compgen -W "init pull reset add admit config list cleanup status update deinit foreach summary sync set-branch set-url absorbgitdirs help --help -h --version -v" -- "$cur") )
         return 0
     fi
 
@@ -99,14 +101,14 @@ _gits() {
                 _gits_complete_paths -f "$cur"
             fi
             ;;
-        clean)
+        cleanup)
             case "$prev" in
-                --scan|--forget-scan)
+                --append|--remove)
                     _gits_complete_paths -d "$cur"
                     ;;
                 *)
                     if [[ "$cur" == -* ]]; then
-                        COMPREPLY=( $(compgen -W "--scan --apply --forget-scan" -- "$cur") )
+                        COMPREPLY=( $(compgen -W "--apply --dry-run --list --append --remove" -- "$cur") )
                     fi
                     ;;
             esac
@@ -164,7 +166,7 @@ _gits() {
         'admit:stage changes, edit a message, and commit'
         'config:show, enable, or disable shared mode'
         'list:show submodules and shared repository state'
-        'clean:preview or remove unused shared mirrors'
+        'cleanup:remove or preview unused shared mirrors'
         'status:pass through to git submodule status'
         'update:pass through to git submodule update'
         'deinit:pass through to git submodule deinit'
@@ -193,11 +195,13 @@ _gits() {
         pull)
             _arguments '--all[update every declared submodule]' '*:submodule path:_files'
             ;;
-        clean)
+        cleanup)
             _arguments \
-                '*--scan[register a project scan root]:directory:_directories' \
                 '--apply[delete mirrors unused for at least 30 days]' \
-                '--forget-scan[remove a registered scan root]:directory:_directories'
+                '--dry-run[preview without deleting mirrors]' \
+                '--list[list registered scan roots]' \
+                '*--append[register a project scan root]:directory:_directories' \
+                '--remove[remove a registered scan root]:directory:_directories'
             ;;
         reset)
             _arguments \
@@ -246,7 +250,7 @@ complete -c gits -f -n __gits_no_subcommand -a add -d 'Pass through to git submo
 complete -c gits -f -n __gits_no_subcommand -a admit -d 'Stage changes, edit a message, and commit'
 complete -c gits -f -n __gits_no_subcommand -a config -d 'Show, enable, or disable shared mode'
 complete -c gits -f -n __gits_no_subcommand -a list -d 'Show submodules and shared repository state'
-complete -c gits -f -n __gits_no_subcommand -a clean -d 'Preview or remove unused shared mirrors'
+complete -c gits -f -n __gits_no_subcommand -a cleanup -d 'Remove or preview unused shared mirrors'
 complete -c gits -f -n __gits_no_subcommand -a 'status update deinit foreach summary sync set-branch set-url absorbgitdirs' -d 'Pass through to git submodule'
 complete -c gits -f -n __gits_no_subcommand -a help -d 'Show help'
 complete -c gits -n __gits_no_subcommand -s h -l help -d 'Show help'
@@ -258,9 +262,11 @@ complete -c gits -F -n '__fish_seen_subcommand_from admit'
 complete -c gits -n '__fish_seen_subcommand_from pull' -l all -d 'Update every declared submodule'
 complete -c gits -F -n '__fish_seen_subcommand_from pull'
 
-complete -c gits -n '__fish_seen_subcommand_from clean' -l scan -r -a '(__fish_complete_directories)' -d 'Register a project scan root'
-complete -c gits -n '__fish_seen_subcommand_from clean' -l apply -d 'Delete mirrors unused for at least 30 days'
-complete -c gits -n '__fish_seen_subcommand_from clean' -l forget-scan -r -a '(__fish_complete_directories)' -d 'Remove a registered scan root'
+complete -c gits -n '__fish_seen_subcommand_from cleanup' -l apply -d 'Delete mirrors unused for at least 30 days'
+complete -c gits -n '__fish_seen_subcommand_from cleanup' -l dry-run -d 'Preview without deleting mirrors'
+complete -c gits -n '__fish_seen_subcommand_from cleanup' -l list -d 'List registered scan roots'
+complete -c gits -n '__fish_seen_subcommand_from cleanup' -l append -r -a '(__fish_complete_directories)' -d 'Register a project scan root'
+complete -c gits -n '__fish_seen_subcommand_from cleanup' -l remove -r -a '(__fish_complete_directories)' -d 'Remove a registered scan root'
 
 complete -c gits -n '__fish_seen_subcommand_from reset' -l hard -d 'Discard working tree changes'
 complete -c gits -n '__fish_seen_subcommand_from reset' -l all -d 'Reset the repository and every declared submodule'
@@ -1103,21 +1109,21 @@ register_clean_scan_root() {
     local existing
 
     root=$(canonical_existing_directory "$requested") || {
-        error "clean scan root does not exist or is not readable: $requested"
+        error "cleanup scan root does not exist or is not readable: $requested"
         return 1
     }
     state=$(clean_state_file "$base")
     while IFS= read -r existing; do
         if [ "$existing" = "$root" ]; then
-            printf 'clean scan root already registered: %s\n' "$root"
+            printf 'cleanup scan root already registered: %s\n' "$root"
             return 0
         fi
     done < <(git config --file "$state" --get-all clean.scanRoot 2>/dev/null)
     git config --file "$state" --add clean.scanRoot "$root" || return 1
-    printf 'clean scan root registered: %s%s%s\n' "$GREEN" "$root" "$RESET"
+    printf 'cleanup scan root registered: %s%s%s\n' "$GREEN" "$root" "$RESET"
 }
 
-forget_clean_scan_root() {
+remove_clean_scan_root() {
     local base="$1"
     local requested="$2"
     local root="$requested"
@@ -1138,12 +1144,30 @@ forget_clean_scan_root() {
         fi
     done < <(git config --file "$state" --get-all clean.scanRoot 2>/dev/null)
     if [ "$found" != "true" ]; then
-        error "clean scan root is not registered: $root"
+        error "cleanup scan root is not registered: $root"
         return 1
     fi
     git config --file "$state" --fixed-value --unset-all clean.scanRoot "$root" || return 1
-    printf 'clean scan root forgotten: %s%s%s\n' "$YELLOW" "$root" "$RESET"
+    printf 'cleanup scan root removed: %s%s%s\n' "$YELLOW" "$root" "$RESET"
     printf 'no mirrors were deleted\n'
+}
+
+list_clean_scan_roots() {
+    local base="$1"
+    local state
+    local root
+    local found=false
+
+    state=$(clean_state_file "$base")
+    printf 'registered cleanup scan roots:\n'
+    while IFS= read -r root; do
+        [ -n "$root" ] || continue
+        printf '  %s%s%s\n' "$GREEN" "$root" "$RESET"
+        found=true
+    done < <(git config --file "$state" --get-all clean.scanRoot 2>/dev/null)
+    if [ "$found" != "true" ]; then
+        printf '  (none)\n'
+    fi
 }
 
 clean_candidate_key() {
@@ -1228,19 +1252,19 @@ scan_and_clean_mirrors() {
     printf 'shared modules repository: %s%s%s\n' "$GREEN" "$base" "$RESET"
     if [ ! -s "$roots_file" ]; then
         rm -rf "$temp"
-        error "no clean scan roots registered; use 'gits clean --scan <root>' first"
+        error "no cleanup scan roots registered; use 'gits cleanup --append <root>' first"
         return 1
     fi
-    printf 'scan roots:\n'
+    printf 'registered cleanup scan roots:\n'
     while IFS= read -r root; do
         printf '  %s%s%s\n' "$GREEN" "$root" "$RESET"
         if [ ! -d "$root" ] || [ ! -r "$root" ]; then
-            error "clean scan root is unavailable: $root"
+            error "cleanup scan root is unavailable: $root"
             blocked=true
             continue
         fi
         if ! find "$root" -type f -path '*/objects/info/alternates' -print0 >> "$alternates_file" 2> "$temp/find-errors"; then
-            error "failed to scan clean root: $root"
+            error "failed to scan cleanup root: $root"
             sed -n '1,5p' "$temp/find-errors" >&2
             blocked=true
         fi
@@ -1334,7 +1358,7 @@ scan_and_clean_mirrors() {
     done < "$alternates_file"
 
     if [ "$blocked" = "true" ]; then
-        printf 'blocked: clean scan is incomplete; no candidate state or mirrors were changed\n' >&2
+        printf 'blocked: cleanup scan is incomplete; no candidate state or mirrors were changed\n' >&2
         rm -rf "$temp"
         return 1
     fi
@@ -1393,7 +1417,7 @@ scan_and_clean_mirrors() {
 
     printf 'summary: %s used, %s waiting, %s eligible, %s reclaimable\n' "$used_count" "$waiting_count" "$eligible_count" "$(format_size_kb "$eligible_kb")"
     if [ "$apply" != "true" ]; then
-        printf "dry run: use 'gits clean --apply' to delete eligible mirrors\n"
+        printf "dry run: use 'gits cleanup' or 'gits cleanup --apply' to delete eligible mirrors\n"
         rm -rf "$temp"
         return 0
     fi
@@ -1423,10 +1447,10 @@ scan_and_clean_mirrors() {
     rm -rf "$temp"
 }
 
-clean_repository() {
+cleanup_repository() {
     local base="$1"
     shift
-    local mode="preview"
+    local mode="apply"
     local status=0
     local requested
     local -a scan_roots=()
@@ -1440,49 +1464,66 @@ clean_repository() {
             ;;
         --apply)
             [ "$#" -eq 1 ] || {
-                error "clean --apply accepts no additional arguments"
+                error "cleanup --apply accepts no additional arguments"
                 return 1
             }
-            mode="apply"
             ;;
-        --forget-scan)
-            [ "$#" -eq 2 ] || {
-                error "clean --forget-scan requires exactly one root"
+        --dry-run)
+            [ "$#" -eq 1 ] || {
+                error "cleanup --dry-run accepts no additional arguments"
                 return 1
             }
-            mode="forget"
+            mode="preview"
+            ;;
+        --list)
+            [ "$#" -eq 1 ] || {
+                error "cleanup --list accepts no additional arguments"
+                return 1
+            }
+            mode="list"
+            ;;
+        --remove)
+            [ "$#" -eq 2 ] || {
+                error "cleanup --remove requires exactly one root"
+                return 1
+            }
+            mode="remove"
             scan_roots+=("$2")
             ;;
-        --scan)
+        --append)
             while [ "$#" -gt 0 ]; do
-                [ "$1" = "--scan" ] && [ -n "$2" ] || {
-                    error "clean accepts repeated --scan <root> arguments"
+                [ "$1" = "--append" ] && [ -n "$2" ] || {
+                    error "cleanup accepts repeated --append <root> arguments"
                     return 1
                 }
                 scan_roots+=("$2")
                 shift 2
             done
-            mode="scan"
+            mode="append"
             ;;
         *)
-            error "clean accepts --scan <root>..., --apply, or --forget-scan <root>"
+            error "cleanup accepts --apply, --dry-run, --list, repeated --append <root>, or --remove <root>"
             return 1
             ;;
     esac
 
     acquire_shared_lock "$base" || return 1
     case "$mode" in
-        scan)
+        append)
             for requested in "${scan_roots[@]}"; do
                 register_clean_scan_root "$base" "$requested" || {
                     status=1
                     break
                 }
             done
-            [ "$status" -ne 0 ] || scan_and_clean_mirrors "$base" false || status=$?
+            [ "$status" -ne 0 ] || list_clean_scan_roots "$base" || status=$?
             ;;
-        forget)
-            forget_clean_scan_root "$base" "${scan_roots[0]}" || status=$?
+        list)
+            list_clean_scan_roots "$base" || status=$?
+            ;;
+        remove)
+            remove_clean_scan_root "$base" "${scan_roots[0]}" || status=$?
+            [ "$status" -ne 0 ] || list_clean_scan_roots "$base" || status=$?
             ;;
         apply)
             scan_and_clean_mirrors "$base" true || status=$?
@@ -1607,14 +1648,14 @@ main() {
             base=$(shared_base "$root")
             list_submodules "$root" "$base"
             ;;
-        clean)
+        cleanup)
             base=$(shared_base "$root")
             [ -n "$base" ] || {
-                error "clean requires shared mode for the current project"
+                error "cleanup requires shared mode for the current project"
                 return 1
             }
             shift
-            clean_repository "$base" "$@"
+            cleanup_repository "$base" "$@"
             ;;
         "")
             git -C "$root" submodule

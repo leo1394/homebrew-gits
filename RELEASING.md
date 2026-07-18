@@ -210,13 +210,15 @@ In disposable Git repositories, verify all of the following:
   to their configured remote branches.
 - `gits config --unset` removes this project's gits-managed alternates without
   deleting shared mirrors or unrelated user-managed alternates.
-- `gits clean --scan <root>` persists the canonical scan root and reports used
-  and waiting mirrors without deleting them.
-- `gits clean --apply` rescans every registered root and deletes only mirrors
+- `gits cleanup --append <root>` persists the canonical scan root without
+  scanning or deleting mirrors; `--list` reports all registered roots and
+  `--remove <root>` removes one registration without deleting mirrors.
+- `gits cleanup --dry-run` previews without deleting; `gits cleanup` and
+  `gits cleanup --apply` rescan every registered root and delete only mirrors
   that have remained unused for at least 30 days.
 - Missing roots, invalid alternates, central lock conflicts, symbolic links,
-  and non-bare repository entries cause clean to fail without deleting mirrors.
-- Referenced mirrors retain unreachable objects; clean does not run object-level
+  and non-bare repository entries cause cleanup to fail without deleting mirrors.
+- Referenced mirrors retain unreachable objects; cleanup does not run object-level
   garbage collection.
 - The Formula installs non-empty Bash, Zsh, and Fish completion files, and the
   generated command candidates exclude removed commands.

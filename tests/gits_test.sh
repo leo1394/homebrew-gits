@@ -68,14 +68,20 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.8"
+assert_equals "$("$GITS" --version)" "gits 0.2.9"
 help_output=$("$GITS" --help)
 assert_contains "$help_output" "gits init [shared_path]"
 assert_contains "$help_output" "gits pull [<path>...|--all]"
 assert_contains "$help_output" "gits add <args...>"
 assert_contains "$help_output" "gits admit <path...|--all>"
-assert_contains "$help_output" "gits clean [--scan <root>...]"
-assert_contains "$help_output" "gits clean --apply"
+assert_contains "$help_output" "gits cleanup"
+assert_contains "$help_output" "gits cleanup --dry-run"
+assert_contains "$help_output" "gits cleanup --list"
+assert_contains "$help_output" "gits cleanup --append <root>..."
+assert_contains "$help_output" "gits cleanup --remove <root>"
+assert_not_contains "$help_output" "gits cleanup --scan"
+assert_not_contains "$help_output" "gits cleanup --forget"
+assert_not_contains "$help_output" "gits clean ["
 assert_not_contains "$help_output" "gits commit"
 assert_not_contains "$help_output" "gits completion"
 assert_contains "$(cat "$ROOT/Formula/gits.rb")" 'chmod 0755, bin/"gits"'
@@ -104,10 +110,12 @@ fi
 assert_contains "$(cat "$bash_completion_file")" "complete -F _gits gits"
 assert_contains "$(cat "$zsh_completion_file")" "compdef _gits gits"
 assert_contains "$(cat "$zsh_completion_file")" "'admit:stage changes"
+assert_contains "$(cat "$zsh_completion_file")" "'cleanup:remove or preview"
 assert_not_contains "$(cat "$zsh_completion_file")" "'commit:"
 assert_not_contains "$(cat "$zsh_completion_file")" "'completion:"
 assert_contains "$(cat "$fish_completion_file")" "complete -c gits"
 assert_contains "$(cat "$fish_completion_file")" "-a admit"
+assert_contains "$(cat "$fish_completion_file")" "-a cleanup"
 assert_not_contains "$(cat "$fish_completion_file")" "-a commit"
 assert_not_contains "$(cat "$fish_completion_file")" "-a completion"
 
@@ -129,14 +137,23 @@ bash_ad_completion=$(/bin/bash -c '
 ' _ "$bash_completion_file")
 assert_equals "$bash_ad_completion" "add admit"
 
-bash_clean_completion=$(/bin/bash -c '
+bash_cleanup_completion=$(/bin/bash -c '
     source "$1"
-    COMP_WORDS=(gits clean --)
+    COMP_WORDS=(gits cleanup --)
     COMP_CWORD=2
     _gits
     printf "%s" "${COMPREPLY[*]}"
 ' _ "$bash_completion_file")
-assert_equals "$bash_clean_completion" "--scan --apply --forget-scan"
+assert_equals "$bash_cleanup_completion" "--apply --dry-run --list --append --remove"
+
+bash_cleanup_command=$(/bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits cle)
+    COMP_CWORD=1
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_equals "$bash_cleanup_command" "cleanup"
 
 bash_reset_completion=$(/bin/bash -c '
     source "$1"
@@ -276,8 +293,8 @@ project_b_list=$(cd "$TEST_ROOT/project-b" && "$GITS" list)
 assert_contains "$project_b_list" $'shared modules repository: \033[1;31mdisabled\033[0m'
 assert_contains "$project_b_list" $'\033[1;32mmodules/shared module\033[0m : '
 assert_contains "$project_b_list" "$TEST_ROOT/submodule-origin.git"
-disabled_clean_output=$(cd "$TEST_ROOT/project-b" && "$GITS" clean 2>&1 || true)
-assert_contains "$disabled_clean_output" "clean requires shared mode"
+disabled_cleanup_output=$(cd "$TEST_ROOT/project-b" && "$GITS" cleanup 2>&1 || true)
+assert_contains "$disabled_cleanup_output" "cleanup requires shared mode"
 
 echo "remote-only update" >> "$TEST_ROOT/submodule-source/content.txt"
 git -C "$TEST_ROOT/submodule-source" commit -qam "remote-only update"
@@ -536,49 +553,82 @@ used_unreachable_object=$(printf 'unreachable but still borrowed' | git -C "$CLE
 printf '%s\n' "$CLEAN_USED_MIRROR/objects" > "$CLEAN_SCAN_ONE/absolute/repo/objects/info/alternates"
 printf '%s\n' '../../../../clean shared/repositories/used.git/objects' > "$CLEAN_SCAN_TWO/relative/repo/objects/info/alternates"
 
-clean_preview=$(
+cleanup_append=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean --scan "$CLEAN_SCAN_ONE" --scan "$CLEAN_SCAN_TWO"
+    "$GITS" cleanup --append "$CLEAN_SCAN_ONE" --append "$CLEAN_SCAN_TWO"
 )
-assert_contains "$clean_preview" "used:"
-assert_contains "$clean_preview" "used.git"
-assert_contains "$clean_preview" "2 consumers"
-assert_contains "$clean_preview" "waiting:"
-assert_contains "$clean_preview" "orphan.git"
-assert_contains "$clean_preview" "revived.git"
-assert_contains "$clean_preview" "dry run"
+assert_contains "$cleanup_append" "cleanup scan root registered:"
+assert_contains "$cleanup_append" "registered cleanup scan roots:"
+assert_contains "$cleanup_append" "$CLEAN_SCAN_ONE"
+assert_contains "$cleanup_append" "$CLEAN_SCAN_TWO"
+assert_not_contains "$cleanup_append" "used:"
+assert_not_contains "$cleanup_append" "waiting:"
+[ ! -e "$CLEAN_SHARED/.gits/last-scan" ] || fail "cleanup --append unexpectedly scanned mirrors"
+
+cleanup_list=$(
+    cd "$CLEAN_PROJECT"
+    "$GITS" cleanup --list
+)
+assert_contains "$cleanup_list" "registered cleanup scan roots:"
+assert_contains "$cleanup_list" "$CLEAN_SCAN_ONE"
+assert_contains "$cleanup_list" "$CLEAN_SCAN_TWO"
+assert_not_contains "$cleanup_list" "used:"
+assert_not_contains "$cleanup_list" "waiting:"
+[ ! -e "$CLEAN_SHARED/.gits/last-scan" ] || fail "cleanup --list unexpectedly scanned mirrors"
+
+cleanup_preview=$(
+    cd "$CLEAN_PROJECT"
+    "$GITS" cleanup --dry-run
+)
+assert_contains "$cleanup_preview" "used:"
+assert_contains "$cleanup_preview" "registered cleanup scan roots:"
+assert_contains "$cleanup_preview" "$CLEAN_SCAN_ONE"
+assert_contains "$cleanup_preview" "$CLEAN_SCAN_TWO"
+assert_contains "$cleanup_preview" "used.git"
+assert_contains "$cleanup_preview" "2 consumers"
+assert_contains "$cleanup_preview" "waiting:"
+assert_contains "$cleanup_preview" "orphan.git"
+assert_contains "$cleanup_preview" "revived.git"
+assert_contains "$cleanup_preview" "dry run"
 assert_contains "$(cat "$CLEAN_SHARED/.gits/last-scan")" $'\tused\t'
 assert_contains "$(cat "$CLEAN_SHARED/.gits/last-scan")" $'\twaiting\t'
-[ -d "$CLEAN_ORPHAN_MIRROR" ] || fail "clean preview deleted an orphan mirror"
+[ -d "$CLEAN_ORPHAN_MIRROR" ] || fail "cleanup preview deleted an orphan mirror"
 
-clean_early_apply=$(
+cleanup_early_apply=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean --apply
+    "$GITS" cleanup --apply
 )
-assert_contains "$clean_early_apply" "cleaned: 0 mirrors"
-[ -d "$CLEAN_ORPHAN_MIRROR" ] || fail "clean deleted a mirror before the grace period"
+assert_contains "$cleanup_early_apply" "cleaned: 0 mirrors"
+[ -d "$CLEAN_ORPHAN_MIRROR" ] || fail "cleanup deleted a mirror before the grace period"
 
 mkdir -p "$CLEAN_SCAN_ONE/revived/repo/objects/info"
 printf '%s\n' "$CLEAN_REVIVED_MIRROR/objects" > "$CLEAN_SCAN_ONE/revived/repo/objects/info/alternates"
-clean_revived=$(
+cleanup_revived=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean
+    "$GITS" cleanup --dry-run
 )
-assert_contains "$clean_revived" "revived.git"
+assert_contains "$cleanup_revived" "revived.git"
 revived_key=$(printf '%s' "$CLEAN_REVIVED_MIRROR" | git hash-object --stdin)
 if git config --file "$CLEAN_STATE" --get "candidate.$revived_key.firstUnused" >/dev/null 2>&1; then
-    fail "clean did not reset a candidate after it became used"
+    fail "cleanup did not reset a candidate after it became used"
 fi
 
 orphan_key=$(printf '%s' "$CLEAN_ORPHAN_MIRROR" | git hash-object --stdin)
 git config --file "$CLEAN_STATE" "candidate.$orphan_key.firstUnused" "$(( $(date +%s) - 31 * 86400 ))"
-clean_apply=$(
+cleanup_dry_run=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean --apply
+    "$GITS" cleanup --dry-run
 )
-assert_contains "$clean_apply" "eligible:"
-assert_contains "$clean_apply" "deleted:"
-assert_contains "$clean_apply" "cleaned: 1 mirrors"
+assert_contains "$cleanup_dry_run" "eligible:"
+assert_not_contains "$cleanup_dry_run" "deleted:"
+[ -d "$CLEAN_ORPHAN_MIRROR" ] || fail "cleanup --dry-run deleted an eligible mirror"
+cleanup_apply=$(
+    cd "$CLEAN_PROJECT"
+    "$GITS" cleanup
+)
+assert_contains "$cleanup_apply" "eligible:"
+assert_contains "$cleanup_apply" "deleted:"
+assert_contains "$cleanup_apply" "cleaned: 1 mirrors"
 [ ! -e "$CLEAN_ORPHAN_MIRROR" ] || fail "eligible orphan mirror was not deleted"
 [ -d "$CLEAN_USED_MIRROR" ] || fail "used mirror was deleted"
 git -C "$CLEAN_USED_MIRROR" cat-file -e "$used_unreachable_object"
@@ -587,24 +637,24 @@ CLEAN_BLOCKED_MIRROR="$CLEAN_SHARED/repositories/blocked.git"
 git init --bare -q "$CLEAN_BLOCKED_MIRROR"
 (
     cd "$CLEAN_PROJECT"
-    "$GITS" clean >/dev/null
+    "$GITS" cleanup --dry-run >/dev/null
 )
 blocked_key=$(printf '%s' "$CLEAN_BLOCKED_MIRROR" | git hash-object --stdin)
 git config --file "$CLEAN_STATE" "candidate.$blocked_key.firstUnused" "$(( $(date +%s) - 31 * 86400 ))"
 mv "$CLEAN_SCAN_TWO" "$CLEAN_SCAN_TWO.offline"
 missing_root_output=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean --apply 2>&1 || true
+    "$GITS" cleanup --apply 2>&1 || true
 )
-assert_contains "$missing_root_output" "clean scan root is unavailable"
+assert_contains "$missing_root_output" "cleanup scan root is unavailable"
 assert_contains "$missing_root_output" "no candidate state or mirrors were changed"
-[ -d "$CLEAN_BLOCKED_MIRROR" ] || fail "clean deleted a mirror after an incomplete scan"
+[ -d "$CLEAN_BLOCKED_MIRROR" ] || fail "cleanup deleted a mirror after an incomplete scan"
 mv "$CLEAN_SCAN_TWO.offline" "$CLEAN_SCAN_TWO"
 
 mkdir "$CLEAN_SHARED/.gits/lock"
 lock_output=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean --apply 2>&1 || true
+    "$GITS" cleanup --apply 2>&1 || true
 )
 assert_contains "$lock_output" "shared modules repository is locked"
 rmdir "$CLEAN_SHARED/.gits/lock"
@@ -615,19 +665,19 @@ mkdir -p "$CLEAN_SCAN_ONE/broken/repo/objects/info"
 printf '%s\n' "$CLEAN_SHARED/repositories/missing.git/objects" > "$CLEAN_SCAN_ONE/broken/repo/objects/info/alternates"
 invalid_alternate_output=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean 2>&1 || true
+    "$GITS" cleanup --dry-run 2>&1 || true
 )
 assert_contains "$invalid_alternate_output" "blocked invalid alternate"
 new_key=$(printf '%s' "$CLEAN_NEW_MIRROR" | git hash-object --stdin)
 if git config --file "$CLEAN_STATE" --get "candidate.$new_key.firstUnused" >/dev/null 2>&1; then
-    fail "incomplete clean scan updated candidate state"
+    fail "incomplete cleanup scan updated candidate state"
 fi
 rm -f "$CLEAN_SCAN_ONE/broken/repo/objects/info/alternates"
 
 ln -s "$CLEAN_USED_MIRROR" "$CLEAN_SHARED/repositories/symlink.git"
 symlink_output=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean 2>&1 || true
+    "$GITS" cleanup --dry-run 2>&1 || true
 )
 assert_contains "$symlink_output" "blocked symbolic link"
 rm -f "$CLEAN_SHARED/repositories/symlink.git"
@@ -635,20 +685,26 @@ rm -f "$CLEAN_SHARED/repositories/symlink.git"
 git init -q "$CLEAN_SHARED/repositories/non-bare.git"
 non_bare_output=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean 2>&1 || true
+    "$GITS" cleanup --dry-run 2>&1 || true
 )
 assert_contains "$non_bare_output" "blocked non-bare shared mirror"
 rm -rf "$CLEAN_SHARED/repositories/non-bare.git"
 
-forget_output=$(
+remove_output=$(
     cd "$CLEAN_PROJECT"
-    "$GITS" clean --forget-scan "$CLEAN_SCAN_TWO"
+    "$GITS" cleanup --remove "$CLEAN_SCAN_TWO"
 )
-assert_contains "$forget_output" "clean scan root forgotten"
-assert_contains "$forget_output" "no mirrors were deleted"
+assert_contains "$remove_output" "cleanup scan root removed"
+assert_contains "$remove_output" "no mirrors were deleted"
 if git config --file "$CLEAN_STATE" --get-all clean.scanRoot | grep -Fqx "$CLEAN_SCAN_TWO"; then
-    fail "clean scan root was not forgotten"
+    fail "cleanup scan root was not removed"
 fi
+cleanup_list_after_remove=$(
+    cd "$CLEAN_PROJECT"
+    "$GITS" cleanup --list
+)
+assert_contains "$cleanup_list_after_remove" "$CLEAN_SCAN_ONE"
+assert_not_contains "$cleanup_list_after_remove" "$CLEAN_SCAN_TWO"
 
 NO_SCAN_PROJECT="$TEST_ROOT/no-scan-project"
 NO_SCAN_SHARED="$TEST_ROOT/no-scan-shared"
@@ -657,9 +713,12 @@ git -C "$NO_SCAN_PROJECT" init -q
 git -C "$NO_SCAN_PROJECT" config --local gits.sharedSubmodules "$NO_SCAN_SHARED"
 no_scan_output=$(
     cd "$NO_SCAN_PROJECT"
-    "$GITS" clean --apply 2>&1 || true
+    "$GITS" cleanup 2>&1 || true
 )
-assert_contains "$no_scan_output" "no clean scan roots registered"
+assert_contains "$no_scan_output" "no cleanup scan roots registered"
+empty_scan_list=$(cd "$NO_SCAN_PROJECT" && "$GITS" cleanup --list)
+assert_contains "$empty_scan_list" "registered cleanup scan roots:"
+assert_contains "$empty_scan_list" "(none)"
 
 LOCKED_INIT_PROJECT="$TEST_ROOT/locked-init-project"
 mkdir "$LOCKED_INIT_PROJECT" "$CLEAN_SHARED/.gits/lock"

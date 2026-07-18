@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.9 - 2026-07-18
+
+- 将 `gits clean` 重命名为 `gits cleanup`，并将缺省行为调整为删除满足安全条件的 eligible mirror。
+- 新增 `gits cleanup --dry-run` 预览模式并保留 `--apply`。
+- 使用 `--list`、`--append`、`--remove` 管理扫描范围登记，替代原 `--scan` 与 `--forget-scan`。
+- `gits cleanup` 扫描时明确输出当前已登记的全部扫描范围路径。
+
 ## 0.2.8 - 2026-07-17
 
 - 扩展 `gits pull` 支持指定一个或多个子模块路径；无参数或 `--all` 时更新全部子模块。

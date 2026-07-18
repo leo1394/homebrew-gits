@@ -152,9 +152,9 @@ ios : ../clobotics-camera-sdk-ios
 Submodule paths and enabled shared-repository paths are green. The `disabled`
 state and all `gits:` error messages are red.
 
-## Clean unused shared mirrors
+## Cleanup unused shared mirrors
 
-`gits clean` removes only complete, unused bare mirrors. It never prunes
+`gits cleanup` removes only complete, unused bare mirrors. It never prunes
 individual objects from a mirror that is still referenced by a checkout.
 
 First register every directory tree that may contain projects using the current
@@ -162,41 +162,50 @@ shared repository. Scan roots are canonicalized and stored under the shared
 directory, not in the projects being scanned:
 
 ```bash
-gits clean --scan ~/Code/company
-gits clean --scan ~/Code/other-projects
+gits cleanup --append ~/Code/company
+gits cleanup --append ~/Code/other-projects
 ```
 
-The command scans `objects/info/alternates`, reports each mirror as `used`,
+`--append` only updates the registration and does not scan or delete mirrors.
+List the current registered paths with:
+
+```bash
+gits cleanup --list
+```
+
+Cleanup scans `objects/info/alternates`, reports each mirror as `used`,
 `waiting`, or `eligible`, and starts a 30-day waiting period for mirrors with no
-consumers. The default command always performs a dry run:
+consumers. Every scan prints all currently registered scan-root paths. Preview
+the current result without deleting mirrors with:
 
 ```bash
-gits clean
+gits cleanup --dry-run
 ```
 
-After a mirror has remained unused for at least 30 days, delete eligible
-mirrors with:
+After a mirror has remained unused for at least 30 days, `gits cleanup`
+deletes eligible mirrors. `--apply` is an explicit equivalent:
 
 ```bash
-gits clean --apply
+gits cleanup
+gits cleanup --apply
 ```
 
-`--apply` performs a fresh scan before deleting anything. If any registered
-scan root is missing or unreadable, an alternate is invalid, a mirror is not a
-normal bare repository, or the shared repository is locked, the command fails
-closed and deletes nothing. Shared `gits init`, `gits pull`, and `gits clean`
-operations use the same central lock.
+The default command and `--apply` perform a fresh scan before deleting anything.
+If any registered scan root is missing or unreadable, an alternate is invalid,
+a mirror is not a normal bare repository, or the shared repository is locked,
+the command fails closed and deletes nothing. Shared `gits init`, `gits pull`,
+and `gits cleanup` operations use the same central lock.
 
 Remove a scan root that is permanently retired with:
 
 ```bash
-gits clean --forget-scan ~/Code/old-workspace
+gits cleanup --remove ~/Code/old-workspace
 ```
 
-This only changes clean metadata and never deletes mirrors in the same command.
+This only changes cleanup metadata and never deletes mirrors in the same command.
 All projects using the shared directory must be located under the registered
 scan roots. A project outside those roots cannot be discovered and therefore
-must be covered by another `--scan` root before using `--apply`.
+must be covered by another `--append` root before running cleanup.
 
 ## Admit changes
 
@@ -273,7 +282,7 @@ changes in the superproject.
 Cleaning works at mirror granularity. A referenced mirror is preserved in full,
 including objects that are not reachable from its current remote refs. This
 protects checkouts that borrow the mirror through Git alternates; object-level
-garbage collection is intentionally outside the scope of `gits clean`.
+garbage collection is intentionally outside the scope of `gits cleanup`.
 
 If multiple submodule paths use the same repository URL, standard mode updates
 and resets every path independently. In shared mode, `gits pull` fetches the
@@ -302,10 +311,12 @@ each updated submodule as modified until you commit the new gitlinks.
 | `gits config <shared_path>` | Enable or change shared mode for the current project. |
 | `gits config --unset` | Disable shared mode and remove this project's gits-managed alternates. |
 | `gits list` | Show submodules and their shared-cache state. |
-| `gits clean --scan <root>` | Register a project scan root and preview mirror usage. |
-| `gits clean` | Rescan registered roots and preview unused mirrors. |
-| `gits clean --apply` | Delete mirrors that have remained unused for at least 30 days. |
-| `gits clean --forget-scan <root>` | Remove a registered scan root without deleting mirrors. |
+| `gits cleanup --list` | List all registered scan roots. |
+| `gits cleanup --append <root>` | Register a project scan root without scanning or deleting mirrors. |
+| `gits cleanup --remove <root>` | Remove a registered scan root without deleting mirrors. |
+| `gits cleanup --dry-run` | Rescan registered roots and preview without deleting mirrors. |
+| `gits cleanup` | Delete mirrors that have remained unused for at least 30 days. |
+| `gits cleanup --apply` | Explicit equivalent of `gits cleanup`. |
 | `gits status` | Pass `status` through to `git submodule`. |
 | `gits <args...>` | Pass other arguments through to `git submodule`. |
 | `gits --version` | Print the installed version. |

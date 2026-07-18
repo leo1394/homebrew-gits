@@ -62,8 +62,8 @@ test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
 - 确认 `gits init`、`gits pull` 和 `gits reset` 后顶层子模块位于配置分支或远端默认分支。
 - 用两个项目复用同一 `<shared_path>`，确认中央目录只有一份对应裸仓库，并且两个项目的子模块工作区相互独立。
 - 确认仅尾部 `.git` 不同的两个 URL 复用同一 mirror，并清理 checkout 中旧版 alternate 引用。
-- 执行 `gits clean --scan <root>`，确认保存规范化扫描根并且默认只预览，不删除 mirror。
-- 确认无人引用 mirror 首次进入 30 天观察期，只有满 30 天且 `gits clean --apply` 二次扫描仍无人引用时才删除。
+- 执行 `gits cleanup --append <root>`，确认只保存规范化扫描根，不扫描或删除 mirror；确认 `--list` 输出全部登记，`--remove <root>` 只删除登记。
+- 执行 `gits cleanup --dry-run` 确认只预览；确认无人引用 mirror 满 30 天后，`gits cleanup` 和 `gits cleanup --apply` 二次扫描仍无人引用时才删除。
 - 确认扫描根缺失、alternate 无效、锁冲突、符号链接或非 bare mirror 会阻止本次全部删除。
 - 确认仍被引用的 mirror 及其中 unreachable object 均被保留。
 - 确认 Formula 安装的 Bash、Zsh、Fish 补全文件非空，且补全候选不包含已移除命令。
