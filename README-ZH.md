@@ -112,7 +112,7 @@ gits status                    # 等价于 git submodule status
 
 `gits reset` 和 `gits reset --hard` 未指定路径时处理父仓库及全部子模块，也可指定一个或多个子模块。指定路径时只处理对应子模块及其 gitlink，不影响父仓库普通文件和其他子模块；路径末尾的 `/` 可省略。`gits reset --all` 和 `gits reset --hard --all` 可显式选择全部子模块。
 
-`gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only --no-recurse-submodules` 更新父仓库；未指定路径时更新全部顶层子模块，也可以通过 `gits pull scripts`、`gits pull scripts/` 或 `gits pull android ios` 只更新指定子模块。路径末尾的 `/` 可省略，`gits pull --all` 与无参数的 `gits pull` 等效。每个已初始化子模块会保持当前分支，只快进到该分支配置的 upstream；命令不会隐式 checkout 其他分支。子模块处于 detached HEAD 或当前分支没有 upstream 时会报错停止，由开发者明确选择或配置分支。尚未初始化的指定子模块只会初始化到 superproject 记录的 commit，不会自动选择分支。产生新的 gitlink 后，可检查改动并通过 `gits admit <path...>` 提交。
+`gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only --no-recurse-submodules` 更新父仓库；未指定路径时更新全部顶层子模块，也可以通过 `gits pull scripts`、`gits pull scripts/` 或 `gits pull android ios` 只更新指定子模块。路径末尾的 `/` 可省略，`gits pull --all` 与无参数的 `gits pull` 等效。每个已初始化子模块会保持当前分支，只快进到该分支配置的 upstream；命令不会隐式 checkout 其他分支。当前分支没有 upstream 时，默认拉取 `origin` 上的同名分支。子模块处于 detached HEAD、云端不存在同名分支或单个模块发生其他错误时会记录失败，但不会中断后续子模块；遍历完成后命令以非零状态退出。尚未初始化的指定子模块只会初始化到 superproject 记录的 commit，不会自动选择分支。产生新的 gitlink 后，可检查改动并通过 `gits admit <path...>` 提交。
 
 ## Cleanup：安全清理闲置 mirror
 

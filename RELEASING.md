@@ -209,8 +209,10 @@ In disposable Git repositories, verify all of the following:
 - `gits pull` fast-forwards the superproject without recursive submodule
   checkout, preserves each initialized submodule's current branch, and
   fast-forwards that branch to its configured upstream.
-- A detached submodule or a current branch without an upstream makes
-  `gits pull` fail without switching branches or changing its commit.
+- A branch without an upstream falls back to its same-named branch on `origin`.
+- A detached submodule or missing same-named remote branch is reported without
+  switching branches; remaining submodules are still processed, and the command
+  returns a failure status after traversal.
 - `gits config --unset` removes this project's gits-managed alternates without
   deleting shared mirrors or unrelated user-managed alternates.
 - `gits cleanup --append <root>` persists the canonical scan root without

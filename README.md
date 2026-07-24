@@ -324,9 +324,11 @@ until you commit the new gitlinks.
 `gits init` checks out the commits recorded by the superproject. `gits pull`
 without paths preserves every initialized top-level submodule's current branch
 and fast-forwards it to its configured upstream. It never checks out a different
-branch implicitly. A detached checkout or a branch without an upstream causes
-the command to stop with an error so that the developer can make the branch
-choice explicitly. An uninitialized selected submodule is initialized at the
+branch implicitly. When the current branch has no upstream, `gits pull` defaults
+to the same-named branch on `origin`. A detached checkout, a missing same-named
+remote branch, or another per-submodule failure is reported, but the remaining
+selected submodules are still processed; the command returns a failure status
+after the traversal. An uninitialized selected submodule is initialized at the
 commit recorded by the superproject without choosing a branch. Pass one or more
 paths to update only those submodules; `scripts` and `scripts/` select the same
 path. When this produces new gitlink values, review them and commit them with
