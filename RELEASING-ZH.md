@@ -59,7 +59,8 @@ test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
 - 在未传路径的项目执行 `gits init`，确认 `gits.sharedSubmodules` 不存在。
 - 执行 `gits init <shared_path>`，确认配置仅写入当前项目的 `.git/config`。
 - 执行 `gits config --unset`，确认清除当前项目的新旧 gits alternate，保留中央 mirror 和用户自定义 alternate。
-- 确认 `gits init`、`gits pull` 和 `gits reset` 后顶层子模块位于配置分支或远端默认分支。
+- 确认 `gits pull` 保持每个已初始化子模块的当前分支，并只快进当前分支的 upstream。
+- 确认子模块处于 detached HEAD 或当前分支没有 upstream 时，`gits pull` 报错且不切换分支、不改变提交。
 - 用两个项目复用同一 `<shared_path>`，确认中央目录只有一份对应裸仓库，并且两个项目的子模块工作区相互独立。
 - 确认仅尾部 `.git` 不同的两个 URL 复用同一 mirror，并清理 checkout 中旧版 alternate 引用。
 - 执行 `gits cleanup --append <root>`，确认只保存规范化扫描根，不扫描或删除 mirror；确认 `--list` 输出全部登记，`--remove <root>` 只删除登记。

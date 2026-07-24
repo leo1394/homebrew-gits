@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.9"
+assert_equals "$("$GITS" --version)" "gits 0.2.10"
 help_output=$("$GITS" --help)
 assert_contains "$help_output" "gits init [shared_path]"
 assert_contains "$help_output" "gits pull [<path>...|--all]"
@@ -394,6 +394,40 @@ assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-normal" apps/main_app/
 assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-normal" apps/companion_app/scripts
 assert_equals "$(git -C "$TEST_ROOT/duplicate-normal" status --porcelain)" ""
 
+git -C "$TEST_ROOT/duplicate-build-source" checkout -qb feature
+echo "initial feature content" >> "$TEST_ROOT/duplicate-build-source/content.txt"
+git -C "$TEST_ROOT/duplicate-build-source" commit -qam "initial feature branch"
+git -C "$TEST_ROOT/duplicate-build-source" push -qu origin feature
+git -C "$TEST_ROOT/duplicate-build-source" checkout -q main
+git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" fetch -q origin feature
+git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" checkout -qb feature --track origin/feature
+git -C "$TEST_ROOT/duplicate-build-source" checkout -q feature
+echo "normal feature update" >> "$TEST_ROOT/duplicate-build-source/content.txt"
+git -C "$TEST_ROOT/duplicate-build-source" commit -qam "normal feature update"
+git -C "$TEST_ROOT/duplicate-build-source" push -q origin feature
+normal_feature_commit=$(git -C "$TEST_ROOT/duplicate-build-source" rev-parse HEAD)
+git -C "$TEST_ROOT/duplicate-build-source" checkout -q main
+normal_feature_pull_output=$(
+    cd "$TEST_ROOT/duplicate-normal"
+    "$GITS" pull apps/main_app/scripts 2>&1
+)
+assert_not_contains "$normal_feature_pull_output" "Switched to branch"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" symbolic-ref --short HEAD)" "feature"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" rev-parse HEAD)" "$normal_feature_commit"
+git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" checkout -q main
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal" status --porcelain)" ""
+
+normal_detached_commit=$(git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" rev-parse HEAD)
+git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" checkout -q --detach
+normal_detached_output=$(
+    cd "$TEST_ROOT/duplicate-normal"
+    "$GITS" pull apps/main_app/scripts 2>&1 || true
+)
+assert_contains "$normal_detached_output" "submodule is not on a branch; checkout a branch before pull: apps/main_app/scripts"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" symbolic-ref -q HEAD || true)" ""
+assert_equals "$(git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" rev-parse HEAD)" "$normal_detached_commit"
+git -C "$TEST_ROOT/duplicate-normal/apps/main_app/scripts" checkout -q main
+
 echo "selected normal pull" >> "$TEST_ROOT/duplicate-build-source/content.txt"
 git -C "$TEST_ROOT/duplicate-build-source" commit -qam "selected normal pull"
 git -C "$TEST_ROOT/duplicate-build-source" push -q origin main
@@ -511,6 +545,35 @@ assert_submodule_at_recorded_commit "$TEST_ROOT/duplicate-shared-project" apps/c
 assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project" status --porcelain)" ""
 
 assert_equals "$(cat "$main_alternate")" "$(cat "$companion_alternate")"
+
+git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" fetch -q origin feature
+git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" checkout -qb feature --track origin/feature
+git -C "$TEST_ROOT/duplicate-build-source" checkout -q feature
+echo "shared feature update" >> "$TEST_ROOT/duplicate-build-source/content.txt"
+git -C "$TEST_ROOT/duplicate-build-source" commit -qam "shared feature update"
+git -C "$TEST_ROOT/duplicate-build-source" push -q origin feature
+shared_feature_commit=$(git -C "$TEST_ROOT/duplicate-build-source" rev-parse HEAD)
+git -C "$TEST_ROOT/duplicate-build-source" checkout -q main
+shared_feature_pull_output=$(
+    cd "$TEST_ROOT/duplicate-shared-project"
+    "$GITS" pull apps/main_app/scripts 2>&1
+)
+assert_not_contains "$shared_feature_pull_output" "Switched to branch"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" symbolic-ref --short HEAD)" "feature"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" rev-parse HEAD)" "$shared_feature_commit"
+git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" checkout -q main
+assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project" status --porcelain)" ""
+
+shared_detached_commit=$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" rev-parse HEAD)
+git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" checkout -q --detach
+shared_detached_output=$(
+    cd "$TEST_ROOT/duplicate-shared-project"
+    "$GITS" pull apps/main_app/scripts 2>&1 || true
+)
+assert_contains "$shared_detached_output" "submodule is not on a branch; checkout a branch before pull: apps/main_app/scripts"
+assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" symbolic-ref -q HEAD || true)" ""
+assert_equals "$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" rev-parse HEAD)" "$shared_detached_commit"
+git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" checkout -q main
 
 echo "selected shared pull" >> "$TEST_ROOT/duplicate-build-source/content.txt"
 git -C "$TEST_ROOT/duplicate-build-source" commit -qam "selected shared pull"

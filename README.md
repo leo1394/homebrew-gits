@@ -15,10 +15,9 @@ current project only when you explicitly provide a shared path.
 - Stores the shared-path setting in the current repository's local Git config.
 - Keeps an independent submodule checkout in every project.
 - Reuses Git objects through bare mirrors and Git alternates, without symlinks.
-- Keeps top-level submodules on their configured or remote default branch for
-  normal development commands.
+- Keeps initialized top-level submodules on their current branches during pull.
 - Pulls the superproject with fast-forward-only semantics and advances each
-  top-level submodule to the latest commit on its configured remote branch.
+  initialized top-level submodule to the latest commit on its current upstream.
 - Stages selected paths and opens an editor with a context-aware default commit
   message.
 - Previews and safely removes whole shared mirrors that have had no consumers
@@ -287,8 +286,9 @@ garbage collection is intentionally outside the scope of `gits cleanup`.
 If multiple submodule paths use the same repository URL, standard mode updates
 and resets every path independently. In shared mode, `gits pull` fetches the
 central mirror only once per repository, then updates every checkout that points
-to it. If the remote branch is ahead of the recorded gitlink, `git status` shows
-each updated submodule as modified until you commit the new gitlinks.
+to it while preserving each checkout's current branch. If an upstream is ahead
+of the recorded gitlink, `git status` shows each updated submodule as modified
+until you commit the new gitlinks.
 
 ## Commands
 
@@ -296,8 +296,8 @@ each updated submodule as modified until you commit the new gitlinks.
 | --- | --- |
 | `gits init` | Synchronize and initialize submodules without enabling shared mode. |
 | `gits init <shared_path>` | Enable shared mode for this project, then initialize submodules. |
-| `gits pull` | Fast-forward the superproject, then advance all submodules to their remote branches. |
-| `gits pull <path...>` | Fast-forward the superproject, then advance only the selected submodules. A trailing `/` is optional. |
+| `gits pull` | Fast-forward the superproject, then fast-forward every initialized submodule's current branch to its upstream. |
+| `gits pull <path...>` | Fast-forward the superproject, then fast-forward only the selected initialized submodules on their current branches. A trailing `/` is optional. |
 | `gits pull --all` | Explicitly advance all submodules; equivalent to `gits pull`. |
 | `gits reset` | Unstage changes in the superproject and all initialized submodules. |
 | `gits reset <path...>` | Unstage changes only for the selected submodules. A trailing `/` is optional. |
@@ -322,11 +322,15 @@ each updated submodule as modified until you commit the new gitlinks.
 | `gits --version` | Print the installed version. |
 
 `gits init` checks out the commits recorded by the superproject. `gits pull`
-without paths advances each top-level submodule to the branch configured by
-`submodule.<name>.branch`, or to the remote default branch when no branch is
-configured. Pass one or more paths to update only those submodules; `scripts`
-and `scripts/` select the same path. When this produces new gitlink values,
-review them and commit them with `gits admit <path...>`.
+without paths preserves every initialized top-level submodule's current branch
+and fast-forwards it to its configured upstream. It never checks out a different
+branch implicitly. A detached checkout or a branch without an upstream causes
+the command to stop with an error so that the developer can make the branch
+choice explicitly. An uninitialized selected submodule is initialized at the
+commit recorded by the superproject without choosing a branch. Pass one or more
+paths to update only those submodules; `scripts` and `scripts/` select the same
+path. When this produces new gitlink values, review them and commit them with
+`gits admit <path...>`.
 
 Use `gits reset --hard` carefully: without paths it discards tracked changes in
 both the superproject and initialized submodules. With paths, ordinary files in

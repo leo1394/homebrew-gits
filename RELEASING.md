@@ -206,8 +206,11 @@ In disposable Git repositories, verify all of the following:
   submodule URL while retaining independent submodule working trees.
 - Submodule URLs that differ only by a trailing `.git` suffix reuse the same
   mirror and migrate legacy alternate references.
-- `gits pull` fast-forwards the superproject and advances top-level submodules
-  to their configured remote branches.
+- `gits pull` fast-forwards the superproject without recursive submodule
+  checkout, preserves each initialized submodule's current branch, and
+  fast-forwards that branch to its configured upstream.
+- A detached submodule or a current branch without an upstream makes
+  `gits pull` fail without switching branches or changing its commit.
 - `gits config --unset` removes this project's gits-managed alternates without
   deleting shared mirrors or unrelated user-managed alternates.
 - `gits cleanup --append <root>` persists the canonical scan root without
@@ -222,8 +225,8 @@ In disposable Git repositories, verify all of the following:
   garbage collection.
 - The Formula installs non-empty Bash, Zsh, and Fish completion files, and the
   generated command candidates exclude removed commands.
-- Top-level submodules remain attached to their configured or remote default
-  branches after `gits init`, `gits pull`, and `gits reset`.
+- `gits init` attaches top-level submodules for normal development; `gits pull`
+  preserves whichever branch is currently checked out.
 - No global `~/.gits-config` file is created.
 
 The automated test suite covers these behaviors:

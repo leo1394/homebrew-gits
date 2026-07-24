@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.10 - 2026-07-24
+
+- 修复 `gits pull` 会按 `.gitmodules` 配置或远端默认分支隐式切换子模块分支的问题。
+- 普通模式与共享模式现在都会保持每个已初始化子模块的当前分支，只快进该分支配置的 upstream。
+- 父仓库 pull 显式禁止递归子模块更新；子模块处于 detached HEAD 或当前分支没有 upstream 时安全报错，不执行分支切换。
+
 ## 0.2.9 - 2026-07-18
 
 - 将 `gits clean` 重命名为 `gits cleanup`，并将缺省行为调整为删除满足安全条件的 eligible mirror。

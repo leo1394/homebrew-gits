@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.9"
+VERSION="0.2.10"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -38,7 +38,7 @@ usage() {
 usage:
   gits init [shared_path]          initialize submodules
                                    shared mode is enabled only when shared_path is given
-  gits pull [<path>...|--all]      fast-forward the repository and update submodules
+  gits pull [<path>...|--all]      fast-forward the repository and current submodule branches
   gits reset [--hard] [<path>...|--all]
                                    reset the repository or selected submodules
   gits add <args...>               pass through to git submodule add
@@ -434,10 +434,9 @@ normal_pull() {
     shift
     local key
     local path
-    local name
 
-    print_cmd "git pull --ff-only"
-    git -C "$root" pull --ff-only || return 1
+    print_cmd "git pull --ff-only --no-recurse-submodules"
+    git -C "$root" -c fetch.recurseSubmodules=false pull --ff-only --no-recurse-submodules || return 1
     validate_submodule_paths "$root" "$@" || return 1
     # print_cmd "git submodule sync --recursive"
     git -C "$root" submodule sync --recursive || return 1
@@ -445,15 +444,12 @@ normal_pull() {
     while IFS= read -r -d '' key && IFS= read -r -d '' path; do
         [ -n "$key" ] || continue
         submodule_path_selected "$path" "$@" || continue
-        name=${key#submodule.}
-        name=${name%.path}
-        print_cmd "git submodule update --init -- $path"
-        git -C "$root" submodule update --init -- "$path" || return 1
-        attach_submodule_branch "$root" "$path" "$name" || return 1
-        # print_cmd "git submodule update --init --remote --merge -- $path"
-        git -C "$root" submodule update --init --remote --merge -- "$path" || return 1
-        # print_cmd "git -C $path submodule update --init --recursive"
-        git -C "$root/$path" submodule update --init --recursive || return 1
+        if git -C "$root/$path" rev-parse --git-dir >/dev/null 2>&1; then
+            update_checkout_from_remote "$root" "$path" || return 1
+        else
+            print_cmd "git submodule update --init -- $path"
+            git -C "$root" submodule update --init -- "$path" || return 1
+        fi
     done < <(submodule_entries "$root")
 }
 
@@ -644,31 +640,72 @@ attach_submodule_branch() {
     fi
 }
 
-update_checkout_from_mirror() {
+update_checkout_from_remote() {
     local root="$1"
     local path="$2"
-    local name="$3"
-    local mirror="$4"
     local checkout="$root/$path"
     local branch
+    local remote
+    local upstream
 
-    branch=$(submodule_branch "$root" "$name" "$checkout" "$mirror")
-    if [ -z "$branch" ] || ! git -C "$mirror" show-ref --verify --quiet "refs/heads/$branch"; then
-        error "cannot determine remote branch for submodule: $path"
+    branch=$(git -C "$checkout" symbolic-ref --short -q HEAD)
+    if [ -z "$branch" ]; then
+        error "submodule is not on a branch; checkout a branch before pull: $path"
+        return 1
+    fi
+    remote=$(git -C "$checkout" config --get "branch.$branch.remote" 2>/dev/null)
+    upstream=$(git -C "$checkout" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)
+    if [ -z "$remote" ] || [ -z "$upstream" ]; then
+        error "submodule branch has no upstream: $path ($branch)"
         return 1
     fi
 
-    print_cmd "git -C $path fetch $mirror $branch"
-    git -C "$checkout" fetch "$mirror" "+refs/heads/$branch:refs/remotes/origin/$branch" || return 1
-    if git -C "$checkout" show-ref --verify --quiet "refs/heads/$branch"; then
-        # print_cmd "git -C $path checkout $branch"
-        git -C "$checkout" checkout "$branch" || return 1
-    else
-        # print_cmd "git -C $path checkout -b $branch origin/$branch"
-        git -C "$checkout" checkout -b "$branch" "refs/remotes/origin/$branch" || return 1
+    if [ "$remote" != "." ]; then
+        print_cmd "git -C $path fetch $remote"
+        git -C "$checkout" fetch "$remote" || return 1
     fi
-    # print_cmd "git -C $path merge --ff-only origin/$branch"
-    git -C "$checkout" merge --ff-only "refs/remotes/origin/$branch"
+    print_cmd "git -C $path merge --ff-only $upstream"
+    git -C "$checkout" merge --ff-only "$upstream"
+}
+
+update_checkout_from_mirror() {
+    local root="$1"
+    local path="$2"
+    local mirror="$3"
+    local checkout="$root/$path"
+    local branch
+    local remote
+    local merge_ref
+    local upstream_ref
+
+    branch=$(git -C "$checkout" symbolic-ref --short -q HEAD)
+    if [ -z "$branch" ]; then
+        error "submodule is not on a branch; checkout a branch before pull: $path"
+        return 1
+    fi
+    remote=$(git -C "$checkout" config --get "branch.$branch.remote" 2>/dev/null)
+    merge_ref=$(git -C "$checkout" config --get "branch.$branch.merge" 2>/dev/null)
+    upstream_ref=$(git -C "$checkout" rev-parse --symbolic-full-name '@{upstream}' 2>/dev/null)
+    if [ -z "$remote" ] || [ -z "$merge_ref" ] || [ -z "$upstream_ref" ]; then
+        error "submodule branch has no upstream: $path ($branch)"
+        return 1
+    fi
+
+    if [ "$remote" = "origin" ]; then
+        if ! git -C "$mirror" show-ref --verify --quiet "$merge_ref"; then
+            error "submodule upstream is missing from shared mirror: $path ($merge_ref)"
+            return 1
+        fi
+        print_cmd "git -C $path fetch $mirror $merge_ref"
+        git -C "$checkout" fetch "$mirror" "+$merge_ref:$upstream_ref" || return 1
+    else
+        if [ "$remote" != "." ]; then
+            print_cmd "git -C $path fetch $remote"
+            git -C "$checkout" fetch "$remote" || return 1
+        fi
+    fi
+    print_cmd "git -C $path merge --ff-only $upstream_ref"
+    git -C "$checkout" merge --ff-only "$upstream_ref"
 }
 
 shared_update() {
@@ -688,6 +725,7 @@ shared_update() {
     local legacy_mirror
     local updated_mirror
     local mirror_is_updated
+    local was_initialized
     local -a updated_mirrors=()
 
     printf 'using shared modules repository: %s%s%s\n' "$GREEN" "$base" "$RESET"
@@ -709,6 +747,10 @@ shared_update() {
 
         mirror=$(mirror_path "$base" "$url") || return 1
         legacy_mirror=$(legacy_mirror_path "$base" "$url") || return 1
+        was_initialized=false
+        if git -C "$root/$path" rev-parse --git-dir >/dev/null 2>&1; then
+            was_initialized=true
+        fi
         mirror_is_updated=false
         for updated_mirror in "${updated_mirrors[@]}"; do
             if [ "$updated_mirror" = "$mirror" ]; then
@@ -733,13 +775,15 @@ shared_update() {
             add_alternate "$root/$path" "$mirror" "$legacy_mirror" || return 1
         fi
 
-        if [ "$update_remote" = "true" ]; then
-            update_checkout_from_mirror "$root" "$path" "$name" "$mirror" || return 1
+        if [ "$update_remote" = "true" ] && [ "$was_initialized" = "true" ]; then
+            update_checkout_from_mirror "$root" "$path" "$mirror" || return 1
+        elif [ "$update_remote" = "true" ]; then
+            :
         else
             attach_submodule_branch "$root" "$path" "$name" "$mirror" || return 1
+            # print_cmd "git -C $path submodule update --init --recursive"
+            git -C "$root/$path" submodule update --init --recursive || return 1
         fi
-        # print_cmd "git -C $path submodule update --init --recursive"
-        git -C "$root/$path" submodule update --init --recursive || return 1
     done < <(submodule_entries "$root")
 }
 
@@ -748,8 +792,8 @@ shared_pull() {
     local base="$2"
     shift 2
 
-    # print_cmd "git -c fetch.recurseSubmodules=false pull --ff-only"
-    git -C "$root" -c fetch.recurseSubmodules=false pull --ff-only || return 1
+    print_cmd "git pull --ff-only --no-recurse-submodules"
+    git -C "$root" -c fetch.recurseSubmodules=false pull --ff-only --no-recurse-submodules || return 1
     validate_submodule_paths "$root" "$@" || return 1
     shared_update "$root" "$base" true "$@"
 }

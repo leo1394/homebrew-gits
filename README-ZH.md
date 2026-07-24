@@ -82,9 +82,9 @@ gits init ~/.cache/gits
 
 仅尾部 `.git` 不同的 URL 会复用同一个 mirror，例如 `../fe-system-docs` 与 `../fe-system-docs.git`。升级后再次执行 `gits init` 或 `gits pull` 会将 checkout 从旧版 raw-URL alternate 迁移到统一 mirror。
 
-`gits init`、`gits pull` 和 `gits reset` 会让顶层子模块保持在 `.gitmodules` 配置分支或远端默认分支，进入子模块后可直接使用 `git status`、`git pull` 和正常代码修改流程。切换共享目录时会迁移同一子模块的旧 gits alternate 引用。
+`gits init` 会按现有配置初始化顶层子模块；`gits pull` 会保持每个已初始化子模块的当前分支，只快进该分支配置的 upstream，不会隐式切换分支。进入子模块后可直接使用 `git status`、`git pull` 和正常代码修改流程。切换共享目录时会迁移同一子模块的旧 gits alternate 引用。
 
-如果多个子模块路径指向同一个 repository URL，普通模式会分别更新和重置每个路径。共享模式下，`gits pull` 对同一中央 mirror 只 fetch 一次，随后分别更新所有引用它的工作区。如果远端分支领先于 superproject 记录的 gitlink，`git status` 会将每个已更新子模块显示为修改状态，直到提交新的 gitlink。
+如果多个子模块路径指向同一个 repository URL，普通模式会分别更新和重置每个路径。共享模式下，`gits pull` 对同一中央 mirror 只 fetch 一次，随后在保持各工作区当前分支的前提下分别更新。如果 upstream 领先于 superproject 记录的 gitlink，`git status` 会将每个已更新子模块显示为修改状态，直到提交新的 gitlink。
 
 `gits list` 会同时显示子模块路径及其在 `.gitmodules` 中声明的 URL：
 
@@ -112,7 +112,7 @@ gits status                    # 等价于 git submodule status
 
 `gits reset` 和 `gits reset --hard` 未指定路径时处理父仓库及全部子模块，也可指定一个或多个子模块。指定路径时只处理对应子模块及其 gitlink，不影响父仓库普通文件和其他子模块；路径末尾的 `/` 可省略。`gits reset --all` 和 `gits reset --hard --all` 可显式选择全部子模块。
 
-`gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only` 更新父仓库；未指定路径时更新全部顶层子模块，也可以通过 `gits pull scripts`、`gits pull scripts/` 或 `gits pull android ios` 只更新指定子模块。路径末尾的 `/` 可省略，`gits pull --all` 与无参数的 `gits pull` 等效。子模块会推进到 `submodule.<name>.branch` 配置的远端分支；未配置 branch 时使用远端默认分支。产生新的 gitlink 后，可检查改动并通过 `gits admit <path...>` 提交。
+`gits init` 会检出 superproject 记录的子模块 commit。`gits pull` 使用 `git pull --ff-only --no-recurse-submodules` 更新父仓库；未指定路径时更新全部顶层子模块，也可以通过 `gits pull scripts`、`gits pull scripts/` 或 `gits pull android ios` 只更新指定子模块。路径末尾的 `/` 可省略，`gits pull --all` 与无参数的 `gits pull` 等效。每个已初始化子模块会保持当前分支，只快进到该分支配置的 upstream；命令不会隐式 checkout 其他分支。子模块处于 detached HEAD 或当前分支没有 upstream 时会报错停止，由开发者明确选择或配置分支。尚未初始化的指定子模块只会初始化到 superproject 记录的 commit，不会自动选择分支。产生新的 gitlink 后，可检查改动并通过 `gits admit <path...>` 提交。
 
 ## Cleanup：安全清理闲置 mirror
 
