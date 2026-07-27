@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.11"
+assert_equals "$("$GITS" --version)" "gits 0.2.12"
 help_output=$("$GITS" --help)
 assert_contains "$help_output" "gits init [shared_path]"
 assert_contains "$help_output" "gits pull [<path>...|--all]"
@@ -636,6 +636,7 @@ git -C "$CLEAN_PROJECT" config --local gits.sharedSubmodules "$CLEAN_SHARED"
 git init --bare -q "$CLEAN_USED_MIRROR"
 git init --bare -q "$CLEAN_ORPHAN_MIRROR"
 git init --bare -q "$CLEAN_REVIVED_MIRROR"
+printf 'Finder metadata\n' > "$CLEAN_SHARED/repositories/.DS_Store"
 used_unreachable_object=$(printf 'unreachable but still borrowed' | git -C "$CLEAN_USED_MIRROR" hash-object -w --stdin)
 printf '%s\n' "$CLEAN_USED_MIRROR/objects" > "$CLEAN_SCAN_ONE/absolute/repo/objects/info/alternates"
 printf '%s\n' '../../../../clean shared/repositories/used.git/objects' > "$CLEAN_SCAN_TWO/relative/repo/objects/info/alternates"
@@ -680,6 +681,15 @@ assert_contains "$cleanup_preview" "dry run"
 assert_contains "$(cat "$CLEAN_SHARED/.gits/last-scan")" $'\tused\t'
 assert_contains "$(cat "$CLEAN_SHARED/.gits/last-scan")" $'\twaiting\t'
 [ -d "$CLEAN_ORPHAN_MIRROR" ] || fail "cleanup preview deleted an orphan mirror"
+[ -f "$CLEAN_SHARED/repositories/.DS_Store" ] || fail "cleanup removed Finder metadata"
+
+printf 'unexpected metadata\n' > "$CLEAN_SHARED/repositories/.unexpected"
+unexpected_hidden_output=$(
+    cd "$CLEAN_PROJECT"
+    "$GITS" cleanup --dry-run 2>&1 || true
+)
+assert_contains "$unexpected_hidden_output" "blocked unexpected entry in shared repositories"
+rm -f "$CLEAN_SHARED/repositories/.unexpected"
 
 cleanup_early_apply=$(
     cd "$CLEAN_PROJECT"

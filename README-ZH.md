@@ -146,6 +146,8 @@ gits cleanup --apply
 
 缺省命令和 `--apply` 删除前一定会重新扫描。任一扫描根目录缺失或不可读、alternate 无效、mirror 不是普通 bare repository，或者中央目录已被其他 gits 操作锁定时，命令都会 fail closed，不删除任何 mirror。共享模式下的 `gits init`、`gits pull` 和 `gits cleanup` 使用同一把中央锁。
 
+共享 `repositories` 目录直属的普通 `.DS_Store` 文件会被忽略；其他未知条目仍会阻止 cleanup，保持 fail-closed。
+
 永久停用某个扫描根目录时可执行：
 
 ```bash

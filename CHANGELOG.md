@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.12 - 2026-07-27
+
+- `gits cleanup` 忽略共享 `repositories` 目录中的普通 `.DS_Store` 文件，同时继续阻止其他未知条目。
+
 ## 0.2.11 - 2026-07-24
 
 - 当前子模块分支没有 upstream 时，`gits pull` 默认拉取 `origin` 上的同名分支。

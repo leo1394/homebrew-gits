@@ -67,5 +67,6 @@ test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
 - 执行 `gits cleanup --append <root>`，确认只保存规范化扫描根，不扫描或删除 mirror；确认 `--list` 输出全部登记，`--remove <root>` 只删除登记。
 - 执行 `gits cleanup --dry-run` 确认只预览；确认无人引用 mirror 满 30 天后，`gits cleanup` 和 `gits cleanup --apply` 二次扫描仍无人引用时才删除。
 - 确认扫描根缺失、alternate 无效、锁冲突、符号链接或非 bare mirror 会阻止本次全部删除。
+- 确认普通 `repositories/.DS_Store` 文件会被忽略，其他未知隐藏条目仍会阻止 cleanup。
 - 确认仍被引用的 mirror 及其中 unreachable object 均被保留。
 - 确认 Formula 安装的 Bash、Zsh、Fish 补全文件非空，且补全候选不包含已移除命令。

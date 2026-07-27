@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.11"
+VERSION="0.2.12"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -1359,6 +1359,10 @@ scan_and_clean_mirrors() {
     elif [ -d "$repo_dir" ]; then
         for entry in "$repo_dir"/.[!.]* "$repo_dir"/..?*; do
             [ -e "$entry" ] || continue
+            mirror_name=$(basename "$entry")
+            if [ "$mirror_name" = ".DS_Store" ] && [ ! -L "$entry" ] && [ -f "$entry" ]; then
+                continue
+            fi
             error "blocked unexpected entry in shared repositories: $entry"
             blocked=true
         done

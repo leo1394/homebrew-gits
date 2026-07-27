@@ -223,6 +223,8 @@ In disposable Git repositories, verify all of the following:
   that have remained unused for at least 30 days.
 - Missing roots, invalid alternates, central lock conflicts, symbolic links,
   and non-bare repository entries cause cleanup to fail without deleting mirrors.
+- A regular `repositories/.DS_Store` file is ignored, while other unexpected
+  hidden entries still cause cleanup to fail closed.
 - Referenced mirrors retain unreachable objects; cleanup does not run object-level
   garbage collection.
 - The Formula installs non-empty Bash, Zsh, and Fish completion files, and the

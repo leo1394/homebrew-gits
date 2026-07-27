@@ -282,6 +282,9 @@ Cleaning works at mirror granularity. A referenced mirror is preserved in full,
 including objects that are not reachable from its current remote refs. This
 protects checkouts that borrow the mirror through Git alternates; object-level
 garbage collection is intentionally outside the scope of `gits cleanup`.
+Finder's regular `.DS_Store` file is ignored when it appears directly inside
+the shared `repositories` directory. Other unexpected entries still block
+cleanup so that deletion remains fail-closed.
 
 If multiple submodule paths use the same repository URL, standard mode updates
 and resets every path independently. In shared mode, `gits pull` fetches the
