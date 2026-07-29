@@ -193,6 +193,8 @@ git add scripts android ios
 
 `gits admit --all` 与 `git add --all` 不同，不会自动暂存普通文件。
 
+处理 merge conflict 时，`--all` 会按各子模块当前 checkout 暂存所有处于 unmerged 状态的已声明子模块，等效于 `git add <submodule...>`，然后再创建提交。如果之后仍存在其他未解决路径，admit 会失败并恢复执行前的索引。
+
 如果本次 commit 仅包含子模块，默认提交信息为：
 
 ```text

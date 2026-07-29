@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.12"
+assert_equals "$("$GITS" --version)" "gits 0.2.13"
 help_output=$("$GITS" --help)
 assert_contains "$help_output" "gits init [shared_path]"
 assert_contains "$help_output" "gits pull [<path>...|--all]"
@@ -899,6 +899,27 @@ echo "custom update" >> "$TEST_ROOT/add-project/root.txt"
     GIT_EDITOR="$EDITOR_SUPPLEMENT" "$GITS" admit root.txt >/dev/null
 )
 assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "feat: custom detail"
+
+advance_submodule "resolve unmerged submodules"
+git -C "$TEST_ROOT/add-project/scripts" pull -q --ff-only
+git -C "$TEST_ROOT/add-project/android" pull -q --ff-only
+git -C "$TEST_ROOT/add-project/ios" pull -q --ff-only
+conflict_ours=$(git -C "$TEST_ROOT/submodule-source" rev-parse HEAD~2)
+conflict_theirs=$(git -C "$TEST_ROOT/submodule-source" rev-parse HEAD~1)
+for conflict_path in scripts android ios; do
+    git -C "$TEST_ROOT/add-project" update-index --force-remove "$conflict_path"
+    printf '160000 %s 2\t%s\n160000 %s 3\t%s\n' \
+        "$conflict_ours" "$conflict_path" "$conflict_theirs" "$conflict_path" |
+        git -C "$TEST_ROOT/add-project" update-index --index-info
+done
+[ -n "$(git -C "$TEST_ROOT/add-project" ls-files -u)" ] || fail "failed to create unmerged submodule index"
+unmerged_admit_output=$(
+    cd "$TEST_ROOT/add-project"
+    GIT_EDITOR="$EDITOR_ACCEPT" "$GITS" admit --all
+)
+assert_contains "$unmerged_admit_output" "git add -- scripts android ios"
+assert_equals "$(git -C "$TEST_ROOT/add-project" ls-files -u)" ""
+assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "update submodule: scripts android ios"
 
 before_removed_commit=$(git -C "$TEST_ROOT/add-project" rev-parse HEAD)
 if (

@@ -245,6 +245,10 @@ git add scripts android ios
 ```
 
 Unlike `git add --all`, `gits admit --all` does not stage non-submodule files.
+During a merge, unmerged declared submodule paths are staged from their current
+checkouts, equivalent to `git add <submodule...>`, before the commit is created.
+If any unmerged path remains afterward, admit fails and restores the original
+index.
 
 If the staged commit contains only submodule entries, the editor starts with:
 
