@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.13 - 2026-07-29
+
+- 修复索引含 unmerged 子模块时，`gits admit --all` 在执行 `git add` 前被 `git write-tree` 中断的问题。
+- `admit --all` 现在可按子模块当前 checkout 暂存并解决 gitlink conflict，同时保留原有索引恢复保障。
+
 ## 0.2.12 - 2026-07-27
 
 - `gits cleanup` 忽略共享 `repositories` 目录中的普通 `.DS_Store` 文件，同时继续阻止其他未知条目。

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.12"
+VERSION="0.2.13"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -1041,8 +1041,8 @@ admit_paths() {
     local index_path
     local backup
     local had_index=false
-    local before_tree
-    local after_tree
+    local before_index
+    local after_index
     local default_message
     local status
     local key
@@ -1086,7 +1086,7 @@ admit_paths() {
         }
         had_index=true
     fi
-    before_tree=$(git -C "$root" write-tree) || {
+    before_index=$(git -C "$root" ls-files --stage) || {
         rm -f "$backup"
         return 1
     }
@@ -1102,13 +1102,19 @@ admit_paths() {
         return "$status"
     }
 
-    after_tree=$(git -C "$root" write-tree) || {
+    after_index=$(git -C "$root" ls-files --stage) || {
         restore_index "$index_path" "$backup" "$had_index"
         rm -f "$backup"
         trap - INT TERM HUP
         return 1
     }
-    if [ "$before_tree" = "$after_tree" ]; then
+    git -C "$root" write-tree >/dev/null || {
+        restore_index "$index_path" "$backup" "$had_index"
+        rm -f "$backup"
+        trap - INT TERM HUP
+        return 1
+    }
+    if [ "$before_index" = "$after_index" ]; then
         rm -f "$backup"
         trap - INT TERM HUP
         error "no changes added"

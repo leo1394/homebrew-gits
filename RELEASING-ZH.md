@@ -70,3 +70,4 @@ test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
 - 确认普通 `repositories/.DS_Store` 文件会被忽略，其他未知隐藏条目仍会阻止 cleanup。
 - 确认仍被引用的 mirror 及其中 unreachable object 均被保留。
 - 确认 Formula 安装的 Bash、Zsh、Fish 补全文件非空，且补全候选不包含已移除命令。
+- 确认 merge conflict 中执行 `gits admit --all` 会暂存所有已声明的 unmerged 子模块并完成提交，同时保留失败或中断时的索引恢复。

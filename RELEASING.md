@@ -229,6 +229,8 @@ In disposable Git repositories, verify all of the following:
   garbage collection.
 - The Formula installs non-empty Bash, Zsh, and Fish completion files, and the
   generated command candidates exclude removed commands.
+- `gits admit --all` resolves unmerged declared gitlinks by staging every
+  submodule path before creating the commit, while preserving index rollback.
 - `gits init` attaches top-level submodules for normal development; `gits pull`
   preserves whichever branch is currently checked out.
 - No global `~/.gits-config` file is created.
