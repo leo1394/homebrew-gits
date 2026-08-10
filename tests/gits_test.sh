@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.13"
+assert_equals "$("$GITS" --version)" "gits 0.2.14"
 help_output=$("$GITS" --help)
 assert_contains "$help_output" "gits init [shared_path]"
 assert_contains "$help_output" "gits pull [<path>...|--all]"
@@ -527,6 +527,8 @@ assert_contains "$companion_url" ".git"
 main_alternate=$(git -C "$TEST_ROOT/duplicate-shared-project/apps/main_app/scripts" rev-parse --path-format=absolute --git-path objects/info/alternates)
 companion_alternate=$(git -C "$TEST_ROOT/duplicate-shared-project/apps/companion_app/scripts" rev-parse --path-format=absolute --git-path objects/info/alternates)
 canonical_objects=$(cat "$main_alternate")
+canonical_hash=$(printf '%s' "$main_url" | git hash-object --stdin)
+assert_equals "$canonical_objects" "$DUPLICATE_SHARED/repositories/build-scripts-${canonical_hash:0:12}.git/objects"
 legacy_hash=$(printf '%s' "$companion_url" | git hash-object --stdin)
 legacy_objects="$DUPLICATE_SHARED/repositories/build-scripts-${legacy_hash:0:12}.git/objects"
 printf '%s\n%s\n' "$canonical_objects" "$legacy_objects" > "$companion_alternate"

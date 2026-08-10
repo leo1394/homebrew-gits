@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.14 - 2026-08-10
+
+- 修复 Ubuntu GNU `tr` 将 mirror slug 字符集中的连字符解析为反向范围，导致共享 mirror 名退化为 `-<hash>.git` 的问题。
+- 增加共享 mirror 规范路径断言，覆盖 GNU/BSD `tr` 的跨平台兼容性。
+
 ## 0.2.13 - 2026-07-29
 
 - 修复索引含 unmerged 子模块时，`gits admit --all` 在执行 `git add` 前被 `git write-tree` 中断的问题。

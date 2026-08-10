@@ -1,8 +1,8 @@
 class Gits < Formula
   desc "Project-scoped Git submodule workflow with a shared repository cache"
   homepage "https://github.com/leo1394/homebrew-gits"
-  url "https://raw.githubusercontent.com/leo1394/homebrew-gits/v0.2.13/bin/gits", using: :nounzip
-  sha256 "7e7be2751d3a5e762097766e5eff2a7af75bc1cbdf2e166c655fc0cf81b88459"
+  url "https://raw.githubusercontent.com/leo1394/homebrew-gits/v0.2.14/bin/gits", using: :nounzip
+  sha256 "81d0575965468583e9842d28cf09faaae1f0b45bac16af3ce7dace3f7e544fcf"
   license "MIT"
   head "https://github.com/leo1394/homebrew-gits.git", branch: "master"
 
@@ -19,7 +19,7 @@ class Gits < Formula
   end
 
   test do
-    assert_match "gits 0.2.13", shell_output("#{bin}/gits --version")
+    assert_match "gits 0.2.14", shell_output("#{bin}/gits --version")
     assert_predicate bin/"gits", :executable?
     assert_path_exists bash_completion/"gits"
     assert_path_exists zsh_completion/"_gits"

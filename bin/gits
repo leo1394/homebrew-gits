@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.13"
+VERSION="0.2.14"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -469,7 +469,7 @@ mirror_path_for_key() {
 
     hash=$(printf '%s' "$key" | git hash-object --stdin) || return 1
     slug=$(basename "${key%.git}")
-    slug=$(printf '%s' "$slug" | tr -c '[:alnum:]._- ' '_' | tr ' ' '_')
+    slug=$(printf '%s' "$slug" | tr -c '[:alnum:]._-' '_') || return 1
     printf '%s/repositories/%s-%s.git\n' "$base" "$slug" "${hash:0:12}"
 }
 
