@@ -16,6 +16,10 @@ The formula locks that file with SHA-256. Homebrew infers the version from the
 `vX.Y.Z` component of the URL, so the formula must not contain a redundant
 `version "X.Y.Z"` declaration.
 
+The same script emits the manual page through the internal `__manpage` action.
+The Formula installs that output as `gits.1`, preserving the single-file release
+artifact.
+
 The release tag must be immutable. Never move, delete, or recreate a published
 tag. If a released artifact is wrong, publish a new patch version.
 
@@ -38,10 +42,10 @@ git status --short
 
 ## 1. Prepare the version
 
-Choose the next semantic version. The examples below use `0.2.5`:
+Choose the next semantic version. The examples below use `X.Y.Z`:
 
 ```bash
-VERSION=0.2.5
+VERSION=X.Y.Z
 TAG="v${VERSION}"
 ```
 
@@ -71,6 +75,7 @@ Check shell and Ruby syntax:
 ```bash
 bash -n bin/gits tests/gits_test.sh
 ruby -c Formula/gits.rb
+bin/gits __manpage | mandoc -Tlint
 ```
 
 Run the behavior tests and Homebrew style check:
@@ -103,7 +108,8 @@ Only the intended release files should be changed.
 Commit the prepared release:
 
 ```bash
-git add bin/gits VERSION.txt Formula/gits.rb tests/gits_test.sh CHANGELOG.md
+git add -u
+git status --short
 git commit -m "Release gits ${VERSION}"
 git push origin master
 ```
@@ -142,7 +148,7 @@ curl -fsSL \
 Expected output for the example release:
 
 ```text
-gits 0.2.5
+gits X.Y.Z
 ```
 
 ## 5. Verify the Homebrew tap
@@ -178,6 +184,7 @@ Confirm that the generated completion files are installed and linked:
 test -e "$(brew --prefix)/etc/bash_completion.d/gits"
 test -e "$(brew --prefix)/share/zsh/site-functions/_gits"
 test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
+MANPATH="$(brew --prefix)/share/man" man -w gits
 ```
 
 Open a new Zsh session and verify that `gits adm<Tab>` completes to
@@ -229,6 +236,8 @@ In disposable Git repositories, verify all of the following:
   garbage collection.
 - The Formula installs non-empty Bash, Zsh, and Fish completion files, and the
   generated command candidates exclude removed commands.
+- `gits help COMMAND` works outside a repository, misspellings suggest useful
+  candidates, and the Formula installs a discoverable `gits(1)` manual page.
 - `gits admit --all` resolves unmerged declared gitlinks by staging every
   submodule path before creating the commit, while preserving index rollback.
 - `gits init` attaches top-level submodules for normal development; `gits pull`

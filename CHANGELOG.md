@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.15 - 2026-08-12
+
+- 将顶层帮助精简为 Git 风格概览，新增 `gits help <command>` 和 `gits <command> --help` 详细帮助。
+- 对无法识别的命令给出安全转义的错误信息和最相近命令候选，并为 `help` 主题及 `version` 命令补充 Bash、Zsh、Fish 自动补全。
+- 新增 `gits(1)` 手册；Homebrew Formula 从单文件发布产物生成并安装手册，同时在 CI 中验证 stable、HEAD、帮助和 man page。
+- 重写中英文 README，突出项目级对象共享、独立工作区、分支保持和 fail-closed 清理，并简化安装与上手示例。
+
 ## 0.2.14 - 2026-08-10
 
 - 修复 Ubuntu GNU `tr` 将 mirror slug 字符集中的连字符解析为反向范围，导致共享 mirror 名退化为 `-<hash>.git` 的问题。

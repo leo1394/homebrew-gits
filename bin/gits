@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.14"
+VERSION="0.2.15"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -36,23 +36,668 @@ git_root() {
 usage() {
     cat <<'EOF'
 usage:
-  gits init [shared_path]          initialize submodules
-                                   shared mode is enabled only when shared_path is given
-  gits pull [<path>...|--all]      fast-forward the repository and current submodule branches
-  gits reset [--hard] [<path>...|--all]
-                                   reset the repository or selected submodules
-  gits add <args...>               pass through to git submodule add
-  gits admit <path...|--all>       stage changes, edit a message, and commit
-  gits config [shared_path|--unset]
-                                   show, enable, or disable shared mode for this repository
-  gits list                        show submodules and shared modules repository state
-  gits cleanup                      delete eligible unused shared mirrors
-  gits cleanup --dry-run            preview unused shared mirrors
-  gits cleanup --list               list registered scan roots
-  gits cleanup --append <root>...   register scan roots
-  gits cleanup --remove <root>      remove a registered scan root
-  gits <args...>                   pass through to git submodule <args...>
-  gits --version                   show the installed version
+  gits <command> [<args>]
+  gits help [<command>]
+  gits [--help | --version]
+
+These are common gits commands:
+
+work with submodules
+   init       Initialize submodules, optionally with shared objects
+   pull       Fast-forward the repository and selected submodules
+   reset      Reset the repository or selected submodules
+   add        Add a submodule through git submodule add
+   admit      Stage selected changes, edit a message, and commit
+
+manage shared Git objects
+   config     View, enable, or disable shared mode for this project
+   list       Show submodules and shared repository state
+   cleanup    Safely preview or remove unused shared mirrors
+
+inspect and maintain submodules
+   status     Show submodule status
+   update     Update registered submodules
+   deinit     Unregister selected submodules
+
+Run 'gits help <command>' or 'gits <command> --help' for detailed help.
+EOF
+}
+
+help_usage() {
+    cat <<'EOF'
+usage:
+  gits help [<command>]
+
+With no command, show the root overview. With one command, show its detailed help.
+EOF
+}
+
+command_help() {
+    case "$1" in
+        help)
+            help_usage
+            ;;
+        version)
+            cat <<'EOF'
+usage:
+  gits version
+  gits --version
+
+Show the installed gits version.
+EOF
+            ;;
+        init)
+            cat <<'EOF'
+usage:
+  gits init [<shared-path>]
+
+Synchronize and initialize the current project's submodules.
+
+Without a path, use standard Git submodule storage. With a path, enable the
+project-scoped shared object repository at that canonical location, then
+initialize the submodules. The setting is written only to this repository's
+local Git config.
+EOF
+            ;;
+        pull)
+            cat <<'EOF'
+usage:
+  gits pull [<path>... | --all]
+
+Fast-forward the superproject, then fast-forward selected initialized
+submodules on their current branches. Without paths, update every declared
+top-level submodule. --all is an explicit equivalent.
+
+The command never chooses a different branch implicitly. A path may include or
+omit its trailing slash.
+EOF
+            ;;
+        reset)
+            cat <<'EOF'
+usage:
+  gits reset [--hard] [<path>... | --all]
+
+Without --hard, unstage changes in the superproject and selected submodules.
+With --hard, discard tracked changes and restore the recorded submodule
+commits. Without paths, process the repository and every declared submodule.
+
+Use --hard carefully: discarded tracked changes cannot be recovered by gits.
+EOF
+            ;;
+        add)
+            cat <<'EOF'
+usage:
+  gits add <git-submodule-add-args>...
+
+Pass all remaining arguments to git submodule add.
+
+Common form:
+  gits add [-b <branch>] [--name <name>] [--reference <repository>] \
+    [--] <repository> [<path>]
+EOF
+            ;;
+        admit)
+            cat <<'EOF'
+usage:
+  gits admit (<path>... | --all)
+
+Stage selected paths, open the Git-configured editor with a context-aware
+default message, and create a commit. --all selects every submodule declared in
+.gitmodules; it does not stage unrelated files.
+
+If message editing or commit creation is cancelled, gits restores the index to
+its pre-command state. Working tree changes are not discarded.
+EOF
+            ;;
+        config)
+            cat <<'EOF'
+usage:
+  gits config [<shared-path> | --unset]
+
+With no argument, show the shared object repository configured for this
+project. A path enables or changes project-scoped shared mode. --unset disables
+shared mode and removes gits-managed alternate references from this project.
+
+Disabling shared mode does not delete central mirrors or user-managed
+alternates.
+EOF
+            ;;
+        list)
+            cat <<'EOF'
+usage:
+  gits list
+
+Show the current project's shared mode and every declared submodule path, URL,
+and cache state.
+EOF
+            ;;
+        cleanup)
+            cat <<'EOF'
+usage:
+  gits cleanup [--apply | --dry-run | --list]
+  gits cleanup --append <root> [--append <root>...]
+  gits cleanup --remove <root>
+
+Manage and safely clean the current project's shared mirror repository.
+
+   --append <root>   Register a tree containing mirror consumers; repeatable
+   --remove <root>   Remove one registered scan root without deleting mirrors
+   --list            List registered scan roots
+   --dry-run         Scan and preview without deleting mirrors
+   --apply           Delete mirrors eligible after the 30-day unused period
+
+With no option, cleanup is equivalent to --apply. Deletion fails closed if a
+registered root cannot be scanned or mirror ownership cannot be verified.
+EOF
+            ;;
+        status)
+            cat <<'EOF'
+usage:
+  gits status [<git-submodule-status-args>...]
+
+Pass all remaining arguments to git submodule status.
+EOF
+            ;;
+        update)
+            cat <<'EOF'
+usage:
+  gits update [<git-submodule-update-args>...]
+
+Pass all remaining arguments to git submodule update.
+EOF
+            ;;
+        deinit)
+            cat <<'EOF'
+usage:
+  gits deinit [<git-submodule-deinit-args>...]
+
+Pass all remaining arguments to git submodule deinit.
+EOF
+            ;;
+        foreach)
+            cat <<'EOF'
+usage:
+  gits foreach [<git-submodule-foreach-args>...]
+
+Pass all remaining arguments to git submodule foreach.
+EOF
+            ;;
+        summary)
+            cat <<'EOF'
+usage:
+  gits summary [<git-submodule-summary-args>...]
+
+Pass all remaining arguments to git submodule summary.
+EOF
+            ;;
+        sync)
+            cat <<'EOF'
+usage:
+  gits sync [<git-submodule-sync-args>...]
+
+Pass all remaining arguments to git submodule sync.
+EOF
+            ;;
+        set-branch)
+            cat <<'EOF'
+usage:
+  gits set-branch [<git-submodule-set-branch-args>...]
+
+Pass all remaining arguments to git submodule set-branch.
+EOF
+            ;;
+        set-url)
+            cat <<'EOF'
+usage:
+  gits set-url [<git-submodule-set-url-args>...]
+
+Pass all remaining arguments to git submodule set-url.
+EOF
+            ;;
+        absorbgitdirs)
+            cat <<'EOF'
+usage:
+  gits absorbgitdirs [<git-submodule-absorbgitdirs-args>...]
+
+Pass all remaining arguments to git submodule absorbgitdirs.
+EOF
+            ;;
+        *)
+            print_unknown_command "$1"
+            return 1
+            ;;
+    esac
+}
+
+run_help() {
+    if [ "$#" -eq 0 ]; then
+        usage
+        return 0
+    fi
+    if [ "$#" -gt 1 ]; then
+        error "help accepts at most one command"
+        help_usage >&2
+        return 1
+    fi
+    case "$1" in
+        -h|--help)
+            help_usage
+            ;;
+        *)
+            command_help "$1"
+            ;;
+    esac
+}
+
+is_supported_command() {
+    case "$1" in
+        init|pull|reset|add|admit|config|list|cleanup|status|update|deinit|foreach|summary|sync|set-branch|set-url|absorbgitdirs)
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+    esac
+}
+
+quote_command() {
+    local value="$1"
+
+    value=${value//\\/\\\\}
+    value=${value//$'\033'/\\x1b}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\r'/\\r}
+    value=${value//$'\t'/\\t}
+    value=${value//\'/\\\'}
+    printf "'%s'" "$value"
+}
+
+command_edit_distance() {
+    local left="$1"
+    local right="$2"
+    local left_length=${#left}
+    local right_length=${#right}
+    local width=$((right_length + 1))
+    local -a distances=()
+    local left_index
+    local right_index
+    local left_character
+    local right_character
+    local replacement_cost
+    local distance
+    local candidate_distance
+
+    for ((left_index = 0; left_index <= left_length; left_index++)); do
+        distances[$((left_index * width))]=$left_index
+    done
+    for ((right_index = 0; right_index <= right_length; right_index++)); do
+        distances[$right_index]=$right_index
+    done
+    for ((left_index = 1; left_index <= left_length; left_index++)); do
+        left_character=${left:$((left_index - 1)):1}
+        for ((right_index = 1; right_index <= right_length; right_index++)); do
+            right_character=${right:$((right_index - 1)):1}
+            replacement_cost=1
+            [ "$left_character" = "$right_character" ] && replacement_cost=0
+
+            distance=$((${distances[$(((left_index - 1) * width + right_index))]} + 1))
+            candidate_distance=$((${distances[$((left_index * width + right_index - 1))]} + 1))
+            [ "$candidate_distance" -ge "$distance" ] || distance=$candidate_distance
+            candidate_distance=$((${distances[$(((left_index - 1) * width + right_index - 1))]} + replacement_cost))
+            [ "$candidate_distance" -ge "$distance" ] || distance=$candidate_distance
+
+            if [ "$left_index" -gt 1 ] && [ "$right_index" -gt 1 ] &&
+                [ "$left_character" = "${right:$((right_index - 2)):1}" ] &&
+                [ "${left:$((left_index - 2)):1}" = "$right_character" ]; then
+                candidate_distance=$((${distances[$(((left_index - 2) * width + right_index - 2))]} + 1))
+                [ "$candidate_distance" -ge "$distance" ] || distance=$candidate_distance
+            fi
+            distances[$((left_index * width + right_index))]=$distance
+        done
+    done
+    printf '%s\n' "${distances[$((left_length * width + right_length))]}"
+}
+
+similar_commands() {
+    local command
+    local maximum_distance=2
+    local best_distance
+    local distance
+    local candidate
+    local -a candidates=(absorbgitdirs add admit cleanup config deinit foreach help init list pull reset set-branch set-url status summary sync update version)
+    local -a suggestions=()
+
+    command=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]') || return 1
+    [ "${#command}" -le 64 ] || return 0
+    best_distance=$((maximum_distance + 1))
+    for candidate in "${candidates[@]}"; do
+        distance=$(command_edit_distance "$command" "$candidate") || return 1
+        if [ "$distance" -gt "$maximum_distance" ] || [ "$distance" -gt "$best_distance" ]; then
+            continue
+        fi
+        if [ "$distance" -lt "$best_distance" ]; then
+            best_distance=$distance
+            suggestions=()
+        fi
+        suggestions+=("$candidate")
+    done
+    printf '%s\n' "${suggestions[@]}"
+}
+
+print_unknown_command() {
+    local command="$1"
+    local suggestions
+    local suggestion
+    local count=0
+
+    error "$(quote_command "$command") is not a gits command. See 'gits --help'."
+    suggestions=$(similar_commands "$command") || return 1
+    [ -n "$suggestions" ] || return 1
+    while IFS= read -r suggestion; do
+        [ -n "$suggestion" ] || continue
+        count=$((count + 1))
+    done <<< "$suggestions"
+    printf '\n' >&2
+    if [ "$count" -eq 1 ]; then
+        printf 'The most similar command is\n' >&2
+    else
+        printf 'The most similar commands are\n' >&2
+    fi
+    while IFS= read -r suggestion; do
+        [ -n "$suggestion" ] || continue
+        printf '\t%s\n' "$suggestion" >&2
+    done <<< "$suggestions"
+    return 1
+}
+
+manpage() {
+    cat <<'EOF'
+.TH GITS 1 "August 12, 2026" "gits" "User Commands"
+.SH NAME
+gits \- manage Git submodules with optional project-scoped object sharing
+.SH SYNOPSIS
+.nf
+\fBgits\fR \fIcommand\fR [\fIargs\fR]
+\fBgits help\fR [\fIcommand\fR]
+\fBgits\fR [\fB\-h\fR | \fB\-\-help\fR]
+\fBgits\fR [\fB\-v\fR | \fB\-\-version\fR]
+.fi
+.SH DESCRIPTION
+.B gits
+is a focused workflow around Git submodules.
+It preserves independent submodule checkouts while optionally allowing projects
+to borrow Git objects from a shared set of bare mirrors.
+.PP
+Shared mode is explicit and project scoped.
+It is enabled only when
+.B gits init
+or
+.B gits config
+receives a shared path.
+The canonical path is stored in the current repository's local Git config; no
+global gits configuration enables object sharing implicitly.
+.PP
+Commands that inspect or change submodules require the current directory to be
+inside a Git repository.
+Help, version, completion generation, and manual-page generation do not.
+.SH COMMANDS
+.TP
+.B init [shared-path]
+Synchronize and initialize submodules.
+Without a path, use standard Git submodule storage.
+With a path, enable project-scoped object sharing at the canonical location
+before initialization.
+.TP
+.B pull [path...] [--all]
+Fast-forward the superproject with recursive submodule checkout disabled, then
+fast-forward selected initialized top-level submodules on their current
+branches.
+Without paths, update all declared top-level submodules.
+.B --all
+is an explicit equivalent.
+.TP
+.B reset [--hard] [path...] [--all]
+Without
+.BR --hard ,
+unstage changes in the superproject and selected submodules.
+With
+.BR --hard ,
+discard tracked changes and restore recorded submodule commits.
+Without paths, process the repository and every declared submodule.
+.TP
+.B add args...
+Pass remaining arguments to
+.BR "git submodule add" .
+.TP
+.B admit path...
+Stage selected paths, open the Git-configured editor with a context-aware
+default message, and create a commit.
+.TP
+.B admit --all
+Stage every submodule declared in
+.I .gitmodules
+and create a commit.
+Unlike
+.BR "git add --all" ,
+this does not select unrelated files.
+.TP
+.B config
+Show the shared path configured for the current project.
+.TP
+.B config shared-path
+Enable or change project-scoped shared mode.
+.TP
+.B config --unset
+Disable shared mode and remove gits-managed alternate references from the
+current project.
+Central mirrors and unrelated user-managed alternates are preserved.
+.TP
+.B list
+Show the project's shared mode and every declared submodule path, URL, and
+cache state.
+.TP
+.B cleanup [--apply]
+Scan registered roots and delete complete bare mirrors that have remained
+unused for at least 30 days.
+With no option,
+.B cleanup
+is equivalent to
+.BR "cleanup --apply" .
+.TP
+.B cleanup --dry-run
+Scan and report mirror state without deleting anything.
+.TP
+.B cleanup --list
+List registered project scan roots.
+.TP
+.B cleanup --append root [--append root...]
+Register one or more directory trees that may contain consumers of the current
+shared repository.
+This action does not scan or delete mirrors.
+.TP
+.B cleanup --remove root
+Remove one registered scan root without deleting mirrors.
+.TP
+.B status args...
+Pass remaining arguments to
+.BR "git submodule status" .
+.TP
+.B update args...
+Pass remaining arguments to
+.BR "git submodule update" .
+.TP
+.B deinit args...
+Pass remaining arguments to
+.BR "git submodule deinit" .
+.TP
+.B foreach args...
+Pass remaining arguments to
+.BR "git submodule foreach" .
+.TP
+.B summary args...
+Pass remaining arguments to
+.BR "git submodule summary" .
+.TP
+.B sync args...
+Pass remaining arguments to
+.BR "git submodule sync" .
+.TP
+.B set-branch args...
+Pass remaining arguments to
+.BR "git submodule set-branch" .
+.TP
+.B set-url args...
+Pass remaining arguments to
+.BR "git submodule set-url" .
+.TP
+.B absorbgitdirs args...
+Pass remaining arguments to
+.BR "git submodule absorbgitdirs" .
+.TP
+.B help [command]
+Show the root command overview or detailed help for one command.
+For example,
+.B gits help cleanup
+is equivalent to
+.BR "gits cleanup --help" .
+.TP
+.B version
+Print the installed gits version.
+.SH SHARED OBJECTS
+The shared directory contains one bare mirror for each normalized submodule
+URL.
+Each project retains its own submodule working tree and borrows the mirror's
+object database through
+.IR objects/info/alternates .
+gits does not replace working trees with symbolic links.
+.PP
+URLs that differ only by a trailing
+.B .git
+suffix use the same mirror.
+When multiple submodule paths use one repository URL, shared pull fetches the
+mirror once and updates each selected checkout independently.
+.PP
+Shared init, pull, and cleanup operations use one lock under the shared
+directory.
+If another operation owns the lock, the new operation fails without modifying
+the shared repository.
+.SH PULL BEHAVIOR
+.B gits pull
+first runs a fast-forward-only superproject pull with recursive submodule
+checkout disabled.
+It then synchronizes submodule configuration and processes the selected
+top-level paths.
+.PP
+An initialized submodule remains on its current branch and is fast-forwarded to
+that branch's configured upstream.
+If no upstream is configured, gits tries the same-named branch on
+.BR origin .
+A detached checkout or missing remote branch is reported without choosing a
+different branch.
+Other selected submodules are still processed, and the command returns failure
+after traversal if any update failed.
+.PP
+An uninitialized selected submodule is initialized at the commit recorded by
+the superproject without choosing a branch.
+Updated gitlinks remain visible as superproject changes until committed.
+.SH ADMIT BEHAVIOR
+Before opening the editor,
+.B admit
+saves the current index and stages the requested paths.
+If the staged changes contain only submodule entries, the initial message is
+.BR "update submodule: paths" .
+If regular files are included, the initial message is
+.BR "feat:" .
+.PP
+Changes already staged before the command remain part of the commit.
+If editing is interrupted, the message is empty, unresolved paths remain, or
+commit creation fails, gits restores the index to its pre-command state.
+Working tree changes are never discarded by this rollback.
+.SH CLEANUP SAFETY
+Cleanup operates at whole-mirror granularity.
+It does not prune individual objects from a referenced mirror because active
+checkouts may borrow objects that are no longer reachable from current remote
+references.
+.PP
+Every project that may consume the shared repository must be located under a
+registered scan root.
+After a complete scan first finds a mirror unused, the mirror enters a 30-day
+waiting period.
+Only a later complete apply scan can delete it.
+.PP
+Cleanup fails closed and deletes nothing when a registered root is missing or
+unreadable, an alternate is invalid, the shared repository is locked, a mirror
+is a symbolic link or not a normal bare repository, or mirror ownership cannot
+be verified.
+A regular
+.I .DS_Store
+directly inside the repositories directory is ignored; other unexpected entries
+block deletion.
+.SH FILES
+.TP
+.I .git/config
+Stores
+.B gits.sharedSubmodules
+for the current project when shared mode is enabled.
+.TP
+.I shared-path/repositories
+Contains normalized bare mirrors used by configured projects.
+.TP
+.I shared-path/.gits/lock
+Serializes shared init, pull, and cleanup operations.
+.TP
+.I shared-path/.gits/clean-config
+Stores cleanup scan roots, candidates, and observation metadata.
+.TP
+.I submodule-git-dir/objects/info/alternates
+References borrowed object databases.
+gits preserves unrelated user-managed entries.
+.SH ENVIRONMENT
+.TP
+.B GIT_EDITOR
+Editor used by
+.BR "gits admit" ,
+subject to normal Git editor precedence.
+.SH SAFETY
+Shared mode reduces duplicate object storage; it does not merge project working
+trees or change the commits recorded by the superproject automatically.
+.PP
+.B gits reset --hard
+discards tracked changes in its selected scope.
+Review the paths before running it.
+.PP
+Cleanup safety depends on complete scan-root registration.
+A consumer outside every registered root cannot be discovered and must be
+covered by another
+.B cleanup --append
+root before apply.
+.SH EXIT STATUS
+.TP
+.B 0
+Success or displayed help.
+.TP
+.B 1
+Invalid syntax, unknown command, missing repository, Git failure, validation
+failure, or incomplete cleanup scan.
+.SH EXAMPLES
+.nf
+gits init
+gits pull
+gits admit scripts
+
+gits init ~/.cache/gits
+gits list
+
+gits cleanup --append ~/Code
+gits cleanup --dry-run
+gits cleanup
+
+gits help cleanup
+.fi
+.SH SEE ALSO
+.BR git (1),
+.BR git-submodule (1),
+.BR brew (1)
 EOF
 }
 
@@ -81,12 +726,17 @@ _gits() {
     fi
 
     if [ "$COMP_CWORD" -eq 1 ]; then
-        COMPREPLY=( $(compgen -W "init pull reset add admit config list cleanup status update deinit foreach summary sync set-branch set-url absorbgitdirs help --help -h --version -v" -- "$cur") )
+        COMPREPLY=( $(compgen -W "init pull reset add admit config list cleanup status update deinit foreach summary sync set-branch set-url absorbgitdirs help version --help -h --version -v" -- "$cur") )
         return 0
     fi
 
     subcommand="${COMP_WORDS[1]}"
     case "$subcommand" in
+        help)
+            if [ "$COMP_CWORD" -eq 2 ]; then
+                COMPREPLY=( $(compgen -W "init pull reset add admit config list cleanup status update deinit foreach summary sync set-branch set-url absorbgitdirs help version" -- "$cur") )
+            fi
+            ;;
         admit)
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=( $(compgen -W "--all" -- "$cur") )
@@ -177,6 +827,7 @@ _gits() {
         'set-url:pass through to git submodule set-url'
         'absorbgitdirs:pass through to git submodule absorbgitdirs'
         'help:show help'
+        'version:show the installed version'
         '--help:show help'
         '-h:show help'
         '--version:show the installed version'
@@ -189,6 +840,9 @@ _gits() {
     fi
 
     case "$words[2]" in
+        help)
+            _arguments '1:command:(init pull reset add admit config list cleanup status update deinit foreach summary sync set-branch set-url absorbgitdirs help version)'
+            ;;
         admit)
             _arguments '--all[stage every declared submodule]' '*:path:_files'
             ;;
@@ -253,8 +907,11 @@ complete -c gits -f -n __gits_no_subcommand -a list -d 'Show submodules and shar
 complete -c gits -f -n __gits_no_subcommand -a cleanup -d 'Remove or preview unused shared mirrors'
 complete -c gits -f -n __gits_no_subcommand -a 'status update deinit foreach summary sync set-branch set-url absorbgitdirs' -d 'Pass through to git submodule'
 complete -c gits -f -n __gits_no_subcommand -a help -d 'Show help'
+complete -c gits -f -n __gits_no_subcommand -a version -d 'Show the installed version'
 complete -c gits -n __gits_no_subcommand -s h -l help -d 'Show help'
 complete -c gits -n __gits_no_subcommand -s v -l version -d 'Show the installed version'
+
+complete -c gits -f -n '__fish_seen_subcommand_from help' -a 'init pull reset add admit config list cleanup status update deinit foreach summary sync set-branch set-url absorbgitdirs help version' -d 'Show command help'
 
 complete -c gits -n '__fish_seen_subcommand_from admit' -l all -d 'Stage every declared submodule'
 complete -c gits -F -n '__fish_seen_subcommand_from admit'
@@ -1635,12 +2292,45 @@ main() {
     local mode
 
     case "$1" in
-        help|--help|-h)
+        help)
+            shift
+            run_help "$@"
+            return $?
+            ;;
+        --help|-h)
             usage
             return 0
             ;;
-        --version|-v)
+        version)
+            if [ "${2:-}" = "--help" ] || [ "${2:-}" = "-h" ]; then
+                [ "$#" -eq 2 ] || {
+                    error "version --help accepts no additional arguments"
+                    return 1
+                }
+                command_help version
+                return 0
+            fi
+            [ "$#" -eq 1 ] || {
+                error "version accepts no arguments"
+                return 1
+            }
             echo "gits $VERSION"
+            return 0
+            ;;
+        --version|-v)
+            [ "$#" -eq 1 ] || {
+                error "$1 accepts no arguments"
+                return 1
+            }
+            echo "gits $VERSION"
+            return 0
+            ;;
+        __manpage)
+            [ "$#" -eq 1 ] || {
+                error "internal manpage generation accepts no arguments"
+                return 1
+            }
+            manpage
             return 0
             ;;
         __completion)
@@ -1650,6 +2340,26 @@ main() {
             }
             completion_script "$2"
             return $?
+            ;;
+    esac
+
+    if is_supported_command "$1" && { [ "${2:-}" = "--help" ] || [ "${2:-}" = "-h" ]; }; then
+        [ "$#" -eq 2 ] || {
+            error "$1 --help accepts no additional arguments"
+            return 1
+        }
+        command_help "$1"
+        return $?
+    fi
+
+    case "$1" in
+        ""|-q|--quiet|--cached|--list)
+            ;;
+        *)
+            if ! is_supported_command "$1"; then
+                print_unknown_command "$1"
+                return 1
+            fi
             ;;
     esac
 
@@ -1753,8 +2463,12 @@ main() {
         "")
             git -C "$root" submodule
             ;;
-        *)
+        add|status|update|deinit|foreach|summary|sync|set-branch|set-url|absorbgitdirs|-q|--quiet|--cached)
             git -C "$root" submodule "$@"
+            ;;
+        *)
+            print_unknown_command "$1"
+            return 1
             ;;
     esac
 }

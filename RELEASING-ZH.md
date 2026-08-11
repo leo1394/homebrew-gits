@@ -7,9 +7,10 @@ bash -n bin/gits tests/gits_test.sh
 bash tests/gits_test.sh
 ruby -c Formula/gits.rb
 brew style Formula/gits.rb
+bin/gits __manpage | mandoc -Tlint
 ```
 
-确认 `bin/gits`、`Formula/gits.rb` 和 `CHANGELOG.md` 中的版本一致。重新计算脚本摘要，并确认与 Formula 一致：
+确认 `bin/gits`、`VERSION.txt`、`Formula/gits.rb`、测试和 `CHANGELOG.md` 中的版本一致。重新计算脚本摘要，并确认与 Formula 一致：
 
 ```bash
 LC_ALL=C shasum -a 256 bin/gits
@@ -22,11 +23,14 @@ LC_ALL=C shasum -a 256 bin/gits
 将主分支推送至 `https://github.com/leo1394/homebrew-gits`，然后创建并推送与 Formula 一致的 tag：
 
 ```bash
-git tag -a v0.2.5 -m "gits 0.2.5"
-git push origin master v0.2.5
+VERSION=X.Y.Z
+TAG="v${VERSION}"
+git tag -a "$TAG" -m "gits ${VERSION}"
+git push origin master "$TAG"
 ```
 
 Formula 的稳定 URL 使用该 tag 下的 `bin/gits` 单文件，并用 SHA-256 锁定内容。tag 必须在安装和审计前存在。
+同一脚本通过内部 `__manpage` 指令生成手册，Formula 将其安装为 `gits.1`，无需增加第二个发布产物。
 
 ## 3. 验证 tap
 
@@ -47,6 +51,7 @@ gits --version
 test -e "$(brew --prefix)/etc/bash_completion.d/gits"
 test -e "$(brew --prefix)/share/zsh/site-functions/_gits"
 test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
+MANPATH="$(brew --prefix)/share/man" man -w gits
 ```
 
 重新打开 Zsh，确认 `gits adm<Tab>` 直接补全为 `gits admit`，
@@ -70,4 +75,5 @@ test -e "$(brew --prefix)/share/fish/vendor_completions.d/gits.fish"
 - 确认普通 `repositories/.DS_Store` 文件会被忽略，其他未知隐藏条目仍会阻止 cleanup。
 - 确认仍被引用的 mirror 及其中 unreachable object 均被保留。
 - 确认 Formula 安装的 Bash、Zsh、Fish 补全文件非空，且补全候选不包含已移除命令。
+- 确认 `gits help COMMAND` 可在仓库外使用，拼写错误会给出有效近似命令，并且 `man gits` 可以找到 Formula 安装的手册。
 - 确认 merge conflict 中执行 `gits admit --all` 会暂存所有已声明的 unmerged 子模块并完成提交，同时保留失败或中断时的索引恢复。

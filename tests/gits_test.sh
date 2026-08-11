@@ -68,29 +68,77 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.14"
+assert_equals "$("$GITS" --version)" "gits 0.2.15"
 help_output=$("$GITS" --help)
-assert_contains "$help_output" "gits init [shared_path]"
-assert_contains "$help_output" "gits pull [<path>...|--all]"
-assert_contains "$help_output" "gits add <args...>"
-assert_contains "$help_output" "gits admit <path...|--all>"
-assert_contains "$help_output" "gits cleanup"
-assert_contains "$help_output" "gits cleanup --dry-run"
-assert_contains "$help_output" "gits cleanup --list"
-assert_contains "$help_output" "gits cleanup --append <root>..."
-assert_contains "$help_output" "gits cleanup --remove <root>"
+assert_contains "$help_output" "gits <command> [<args>]"
+assert_contains "$help_output" "gits help [<command>]"
+assert_contains "$help_output" "work with submodules"
+assert_contains "$help_output" "manage shared Git objects"
+assert_contains "$help_output" "gits help <command>"
 assert_not_contains "$help_output" "gits cleanup --scan"
 assert_not_contains "$help_output" "gits cleanup --forget"
 assert_not_contains "$help_output" "gits clean ["
 assert_not_contains "$help_output" "gits commit"
 assert_not_contains "$help_output" "gits completion"
-assert_contains "$(cat "$ROOT/Formula/gits.rb")" 'chmod 0755, bin/"gits"'
+
+assert_equals "$("$GITS" help)" "$help_output"
+assert_contains "$("$GITS" help init)" "gits init [<shared-path>]"
+assert_contains "$("$GITS" help pull)" "gits pull [<path>... | --all]"
+assert_contains "$("$GITS" help reset)" "gits reset [--hard] [<path>... | --all]"
+assert_contains "$("$GITS" help add)" "git submodule add"
+assert_contains "$("$GITS" help admit)" "gits admit (<path>... | --all)"
+assert_contains "$("$GITS" help config)" "gits config [<shared-path> | --unset]"
+assert_contains "$("$GITS" help list)" "gits list"
+cleanup_help=$("$GITS" help cleanup)
+assert_contains "$cleanup_help" "gits cleanup [--apply | --dry-run | --list]"
+assert_contains "$cleanup_help" "gits cleanup --append <root> [--append <root>...]"
+assert_contains "$cleanup_help" "gits cleanup --remove <root>"
+assert_contains "$("$GITS" help status)" "git submodule status"
+assert_contains "$("$GITS" help help)" "gits help [<command>]"
+assert_contains "$("$GITS" help version)" "gits --version"
+assert_equals "$("$GITS" pull --help)" "$("$GITS" help pull)"
+assert_equals "$("$GITS" version --help)" "$("$GITS" help version)"
+
+if "$GITS" help pull extra > "$TEST_ROOT/help-extra.out" 2>&1; then
+    fail "help with more than one topic should fail"
+fi
+assert_contains "$(cat "$TEST_ROOT/help-extra.out")" "help accepts at most one command"
 
 outside_git="$TEST_ROOT/outside git"
+mkdir "$outside_git"
+unknown_output=$(
+    cd "$outside_git"
+    "$GITS" sad 2>&1 || true
+)
+assert_contains "$unknown_output" "gits: 'sad' is not a gits command. See 'gits --help'."
+assert_contains "$unknown_output" "The most similar command is"
+assert_contains "$unknown_output" $'\tadd'
+
+typo_output=$(
+    cd "$outside_git"
+    "$GITS" clenaup 2>&1 || true
+)
+assert_contains "$typo_output" "gits: 'clenaup' is not a gits command"
+assert_contains "$typo_output" $'\tcleanup'
+
+help_typo_output=$("$GITS" help puhl 2>&1 || true)
+assert_contains "$help_typo_output" "gits: 'puhl' is not a gits command"
+assert_contains "$help_typo_output" $'\tpull'
+
+manpage_file="$TEST_ROOT/gits.1"
+"$GITS" __manpage > "$manpage_file"
+assert_contains "$(cat "$manpage_file")" '.TH GITS 1'
+assert_contains "$(cat "$manpage_file")" '.SH COMMANDS'
+assert_contains "$(cat "$manpage_file")" '.SH SAFETY'
+if command -v mandoc >/dev/null 2>&1; then
+    mandoc -Tlint "$manpage_file"
+fi
+assert_contains "$(cat "$ROOT/Formula/gits.rb")" 'chmod 0755, bin/"gits"'
+assert_contains "$(cat "$ROOT/Formula/gits.rb")" 'Utils.safe_popen_read(bin/"gits", "__manpage")'
+
 bash_completion_file="$TEST_ROOT/gits.bash"
 zsh_completion_file="$TEST_ROOT/_gits"
 fish_completion_file="$TEST_ROOT/gits.fish"
-mkdir "$outside_git"
 (
     cd "$outside_git"
     "$GITS" __completion bash > "$bash_completion_file"
@@ -111,11 +159,15 @@ assert_contains "$(cat "$bash_completion_file")" "complete -F _gits gits"
 assert_contains "$(cat "$zsh_completion_file")" "compdef _gits gits"
 assert_contains "$(cat "$zsh_completion_file")" "'admit:stage changes"
 assert_contains "$(cat "$zsh_completion_file")" "'cleanup:remove or preview"
+assert_contains "$(cat "$zsh_completion_file")" "'version:show the installed version'"
+assert_contains "$(cat "$zsh_completion_file")" "case \"\$words[2]\""
 assert_not_contains "$(cat "$zsh_completion_file")" "'commit:"
 assert_not_contains "$(cat "$zsh_completion_file")" "'completion:"
 assert_contains "$(cat "$fish_completion_file")" "complete -c gits"
 assert_contains "$(cat "$fish_completion_file")" "-a admit"
 assert_contains "$(cat "$fish_completion_file")" "-a cleanup"
+assert_contains "$(cat "$fish_completion_file")" "-a version"
+assert_contains "$(cat "$fish_completion_file")" "__fish_seen_subcommand_from help"
 assert_not_contains "$(cat "$fish_completion_file")" "-a commit"
 assert_not_contains "$(cat "$fish_completion_file")" "-a completion"
 
@@ -155,6 +207,15 @@ bash_cleanup_command=$(/bin/bash -c '
 ' _ "$bash_completion_file")
 assert_equals "$bash_cleanup_command" "cleanup"
 
+bash_help_command=$(/bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits help pu)
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_equals "$bash_help_command" "pull"
+
 bash_reset_completion=$(/bin/bash -c '
     source "$1"
     COMP_WORDS=(gits reset --)
@@ -193,11 +254,20 @@ removed_completion_output=$(
     cd "$TEST_ROOT"
     "$GITS" completion bash 2>&1 || true
 )
-assert_contains "$removed_completion_output" "not a Git repository"
+assert_contains "$removed_completion_output" "'completion' is not a gits command"
 
 formula_sha=$(sed -n 's/^  sha256 "\([0-9a-f]*\)"/\1/p' "$ROOT/Formula/gits.rb")
-script_sha=$(shasum -a 256 "$GITS" | awk '{print $1}')
-assert_equals "$formula_sha" "$script_sha"
+[[ "$formula_sha" =~ ^[0-9a-f]{64}$ ]] || fail "Formula sha256 is invalid: $formula_sha"
+formula_tag=$(sed -n 's@^  url ".*/\(v[^/]*\)/bin/gits".*@\1@p' "$ROOT/Formula/gits.rb")
+[ -n "$formula_tag" ] || fail "Formula release tag is missing"
+if git -C "$ROOT" cat-file -e "$formula_tag:bin/gits" 2>/dev/null; then
+    script_sha=$(git -C "$ROOT" show "$formula_tag:bin/gits" | shasum -a 256 | awk '{print $1}')
+    assert_equals "$formula_sha" "$script_sha"
+elif git -C "$ROOT" diff --quiet -- bin/gits Formula/gits.rb &&
+    git -C "$ROOT" tag --points-at HEAD | grep -Fxq "$formula_tag"; then
+    script_sha=$(shasum -a 256 "$GITS" | awk '{print $1}')
+    assert_equals "$formula_sha" "$script_sha"
+fi
 missing_git_output=$(PATH=/nonexistent "$GITS" init 2>&1 || true)
 assert_contains "$missing_git_output" "Git is required"
 assert_contains "$missing_git_output" $'\033[1;31mgits: Git is required'
@@ -224,6 +294,11 @@ git clone -q "$TEST_ROOT/project-origin.git" "$TEST_ROOT/project-a"
 (
     cd "$TEST_ROOT/project-a"
     "$GITS" init "$SHARED_BASE" >/dev/null
+)
+(
+    cd "$TEST_ROOT/project-a"
+    "$GITS" status >/dev/null
+    "$GITS" --quiet status >/dev/null
 )
 
 assert_equals "$(git -C "$TEST_ROOT/project-a" config --local --get gits.sharedSubmodules)" "$SHARED_BASE"

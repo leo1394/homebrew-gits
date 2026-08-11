@@ -24,5 +24,49 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Check manual page
+        run: bin/gits __manpage | mandoc -Tlint
       - name: Check Formula style
         run: brew style Formula/gits.rb
+      - name: Install and test published stable and local HEAD Formula
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          set -euo pipefail
+          tap="gits-ci/gits"
+          brew tap-new --no-git "$tap"
+          tap_dir="$(brew --repository "$tap")"
+          formula="$tap_dir/Formula/gits.rb"
+          cp Formula/gits.rb "$formula"
+          ruby -pi -e 'url = "file://" + ENV.fetch("GITHUB_WORKSPACE"); $_ = $_.sub(/^  head .*$/, "  head #{url.inspect}, using: :git")' "$formula"
+          grep -F "head \"file://$GITHUB_WORKSPACE\", using: :git" "$formula"
+
+          stable_tag="$(sed -nE 's@^  url ".*/(v[^/]+)/bin/gits".*@\1@p' Formula/gits.rb)"
+          test -n "$stable_tag"
+          if git ls-remote --exit-code --tags origin "refs/tags/$stable_tag" >/dev/null 2>&1; then
+            brew install "$tap/gits"
+            brew test "$tap/gits"
+            brew uninstall "$tap/gits"
+          else
+            tag_query_status=$?
+            if [ "$tag_query_status" -ne 2 ]; then
+              echo "Unable to inspect origin for $stable_tag" >&2
+              exit "$tag_query_status"
+            fi
+            echo "Skipping stable Formula until $stable_tag is published"
+          fi
+
+          brew install --HEAD "$tap/gits"
+          brew test "$tap/gits"
+          gits_prefix="$(brew --prefix "$tap/gits")"
+          gits_bin="$gits_prefix/bin/gits"
+          test -s "$gits_prefix/share/man/man1/gits.1"
+          MANPATH="$gits_prefix/share/man" man -w gits | grep -Fq "$gits_prefix/share/man/man1/gits.1"
+          "$gits_bin" help cleanup | grep -Fq -- "--dry-run"
+
+          if "$gits_bin" sad >"$RUNNER_TEMP/gits-unknown.out" 2>&1; then
+            echo "unknown command unexpectedly succeeded" >&2
+            exit 1
+          fi
+          grep -Fq "The most similar command is" "$RUNNER_TEMP/gits-unknown.out"
+          grep -Fq $'\tadd' "$RUNNER_TEMP/gits-unknown.out"

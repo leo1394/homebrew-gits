@@ -1,28 +1,60 @@
 # gits
 
-`gits` is a lightweight Git submodule workflow with optional, project-scoped
-object sharing. It keeps standard Git submodule behavior while allowing multiple
-projects to reuse a central cache of bare repositories.
+**English** | [简体中文](README-ZH.md)
 
-Shared mode is never enabled globally or implicitly. It is enabled for the
-current project only when you explicitly provide a shared path.
+[![CI](https://github.com/leo1394/homebrew-gits/actions/workflows/ci.yml/badge.svg)](https://github.com/leo1394/homebrew-gits/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-## Features
+> A safer, faster workflow for Git submodules, with optional project-scoped
+> object sharing.
 
-- Initializes and updates standard Git submodules.
-- Enables a central shared repository cache only for explicitly configured
-  projects.
-- Stores the shared-path setting in the current repository's local Git config.
-- Keeps an independent submodule checkout in every project.
-- Reuses Git objects through bare mirrors and Git alternates, without symlinks.
-- Keeps initialized top-level submodules on their current branches during pull.
-- Pulls the superproject with fast-forward-only semantics and advances each
-  initialized top-level submodule to the latest commit on its current upstream.
-- Stages selected paths and opens an editor with a context-aware default commit
-  message.
-- Previews and safely removes whole shared mirrors that have had no consumers
-  for at least 30 days.
-- Installs native Bash, Zsh, and Fish command completions through Homebrew.
+`gits` keeps standard Git submodule checkouts while removing repetitive setup
+and update work. Projects may opt into a shared set of bare mirrors to avoid
+downloading and storing the same Git objects again.
+
+- **Keep normal checkouts:** every project has its own submodule working tree.
+- **Share only when asked:** shared mode is enabled per repository, never
+  globally or implicitly.
+- **Preserve branches:** pull is fast-forward-only and does not choose another
+  submodule branch.
+- **Clean conservatively:** unused mirrors are deleted only after complete
+  scans, a 30-day waiting period, and fail-closed validation.
+
+## Why gits
+
+Git submodules provide precise versioning, but repeated clones waste bandwidth
+and disk space when many projects use the same repositories. Replacing working
+trees with symlinks saves space but breaks project isolation.
+
+`gits` shares Git objects, not working directories:
+
+```mermaid
+flowchart LR
+    A["Project A submodule checkout"] -->|"Git alternates"| M["Shared bare mirror"]
+    B["Project B submodule checkout"] -->|"Git alternates"| M
+    A --> C["Independent branch and working tree"]
+    B --> D["Independent branch and working tree"]
+```
+
+The shared path is recorded in the current repository's local `.git/config`.
+Projects without that setting continue to use ordinary Git submodule storage.
+
+## Safety by design
+
+- Shared mode starts only with `gits init PATH` or `gits config PATH`.
+- The superproject pull uses `--ff-only --no-recurse-submodules`.
+- Initialized submodules stay on their current branches and only fast-forward
+  to their configured upstreams.
+- Shared init, pull, and cleanup operations use one central lock.
+- Cleanup removes whole unused bare mirrors, never individual borrowed objects.
+- Missing scan roots, invalid alternates, symlinks, unknown entries, or
+  unverifiable mirrors stop cleanup before deletion.
+- A cancelled `gits admit` restores the previous index without discarding
+  working-tree changes.
+
+`gits reset --hard` is intentionally destructive within its selected scope.
+Review the paths before running it. Cleanup is reliable only when every project
+using a shared path is covered by a registered scan root.
 
 ## Requirements
 
@@ -33,101 +65,50 @@ current project only when you explicitly provide a shared path.
 The Homebrew formula uses the Git provided by macOS. On Linux, Homebrew installs
 its Git formula when needed.
 
-## Installation
-
-Add the tap once, then install the formula by its short name:
+## Install
 
 ```bash
 brew tap leo1394/gits
 brew install gits
 ```
 
-The fully qualified formula name is `leo1394/gits/gits`, but it is not needed
-after the tap has been added.
-
-To upgrade or remove `gits`:
+Upgrade later with:
 
 ```bash
+brew update
 brew upgrade gits
-brew uninstall gits
 ```
-
-Verify the installation:
-
-```bash
-gits --version
-```
-
-### Shell completion
-
-The Homebrew formula installs Bash, Zsh, and Fish completion files. After
-installing or upgrading, open a new terminal before testing completion.
-
-For Zsh, if completion is not already enabled, initialize Homebrew's shell
-environment and Zsh completion once in the current session:
-
-```bash
-eval "$(brew shellenv)"
-autoload -Uz compinit
-compinit
-```
-
-Because both `add` and `admit` are valid commands, `gits ad<Tab>` lists both
-candidates. `gits adm<Tab>` completes directly to `gits admit`.
-
-### Legacy shell alias conflict
-
-If `gits list` or `gits config` prints the `git submodule` usage text, an older
-shell alias or function is shadowing the Homebrew executable. Remove the legacy
-definition from the current shell and refresh command lookup:
-
-```bash
-unalias gits 2>/dev/null || true
-unset -f gits 2>/dev/null || true
-hash -r
-type -a gits
-```
-
-The first result should be `/opt/homebrew/bin/gits` on Apple Silicon or
-`/usr/local/bin/gits` on Intel macOS. Also remove or comment out the old `gits`
-alias in shell startup files before opening a new terminal.
 
 ## Quick start
 
-### Standard submodule mode
+### Standard submodules
 
-Run `init` without a path to use normal Git submodule behavior. This does not
-enable shared mode:
+No shared path means normal Git submodule storage:
 
 ```bash
 cd /path/to/project
 gits init
 gits pull
-gits pull scripts/
-gits pull android ios
 ```
 
-### Project-scoped shared mode
+### Project-scoped object sharing
 
-Pass a directory explicitly to enable shared mode for the current project:
+Pass a path once to enable shared objects for this project:
 
 ```bash
 cd /path/to/project
 gits init ~/.cache/gits
+gits list
 ```
 
-The canonical path is stored in the current repository's `.git/config`:
+The canonical path is stored only in this repository:
 
 ```ini
 [gits]
     sharedSubmodules = /Users/you/.cache/gits
 ```
 
-No global `~/.gits-config` file is created or read. Configuring one project does
-not affect any other project. Later `gits init`, `gits pull`, and `gits list`
-commands in that project continue to use the recorded shared path.
-
-To inspect, change, or disable the project setting:
+Other projects remain unchanged. To inspect, change, or disable the setting:
 
 ```bash
 gits config
@@ -135,219 +116,59 @@ gits config /another/shared/path
 gits config --unset
 ```
 
-`gits config --unset` removes every alternate managed by gits for the current
-project, including references to previous shared paths. It preserves unrelated
-user-managed alternates and does not delete central mirrors that other projects
-may still use.
-
-`gits list` prints each submodule path together with its URL from `.gitmodules`:
-
-```text
-shared modules repository: disabled
-android : ../clobotics-camera-sdk-android
-ios : ../clobotics-camera-sdk-ios
-```
-
-Submodule paths and enabled shared-repository paths are green. The `disabled`
-state and all `gits:` error messages are red.
-
-## Cleanup unused shared mirrors
-
-`gits cleanup` removes only complete, unused bare mirrors. It never prunes
-individual objects from a mirror that is still referenced by a checkout.
-
-First register every directory tree that may contain projects using the current
-shared repository. Scan roots are canonicalized and stored under the shared
-directory, not in the projects being scanned:
-
-```bash
-gits cleanup --append ~/Code/company
-gits cleanup --append ~/Code/other-projects
-```
-
-`--append` only updates the registration and does not scan or delete mirrors.
-List the current registered paths with:
-
-```bash
-gits cleanup --list
-```
-
-Cleanup scans `objects/info/alternates`, reports each mirror as `used`,
-`waiting`, or `eligible`, and starts a 30-day waiting period for mirrors with no
-consumers. Every scan prints all currently registered scan-root paths. Preview
-the current result without deleting mirrors with:
-
-```bash
-gits cleanup --dry-run
-```
-
-After a mirror has remained unused for at least 30 days, `gits cleanup`
-deletes eligible mirrors. `--apply` is an explicit equivalent:
-
-```bash
-gits cleanup
-gits cleanup --apply
-```
-
-The default command and `--apply` perform a fresh scan before deleting anything.
-If any registered scan root is missing or unreadable, an alternate is invalid,
-a mirror is not a normal bare repository, or the shared repository is locked,
-the command fails closed and deletes nothing. Shared `gits init`, `gits pull`,
-and `gits cleanup` operations use the same central lock.
-
-Remove a scan root that is permanently retired with:
-
-```bash
-gits cleanup --remove ~/Code/old-workspace
-```
-
-This only changes cleanup metadata and never deletes mirrors in the same command.
-All projects using the shared directory must be located under the registered
-scan roots. A project outside those roots cannot be discovered and therefore
-must be covered by another `--append` root before running cleanup.
-
-## Admit changes
-
-`gits add` retains standard Git submodule behavior and passes all arguments
-through to `git submodule add`:
-
-```bash
-gits add [-q|--quiet] [-b <branch>] [-f|--force] [--name <name>] \
-  [--reference <repository>] [--] <repository> [<path>]
-```
-
-`admit` describes accepting selected changes into project history. `gits admit`
-stages the requested paths, opens the Git-configured editor with a
-default commit message, and creates a commit after the editor closes:
+### Commit selected changes
 
 ```bash
 gits admit scripts
-gits admit scripts/
-gits admit scripts android
-gits admit non-submodule-directory
-gits admit .
-```
-
-A trailing slash on an exact submodule path is normalized, so
-`gits admit scripts` and `gits admit scripts/` behave the same way.
-
-Use `--all` to stage every submodule declared in `.gitmodules`:
-
-```bash
+gits admit android ios
 gits admit --all
 ```
 
-For a project whose submodules are `scripts`, `android`, and `ios`, this is
-equivalent to:
+`--all` selects every submodule declared in `.gitmodules`; it does not stage
+unrelated files. The configured Git editor opens with a suggested message.
+
+## Daily commands
+
+| Task | Command |
+| --- | --- |
+| Initialize standard submodules | `gits init` |
+| Enable shared objects and initialize | `gits init ~/.cache/gits` |
+| Update all current branches | `gits pull` |
+| Update selected submodules | `gits pull scripts android` |
+| Show paths, URLs, and cache state | `gits list` |
+| Show the configured shared path | `gits config` |
+| Stage and commit selected paths | `gits admit PATH...` |
+| Unstage selected submodules | `gits reset PATH...` |
+| Restore selected recorded commits | `gits reset --hard PATH...` |
+| Use standard submodule status | `gits status` |
+
+`add`, `status`, `update`, `deinit`, `foreach`, `summary`, `sync`,
+`set-branch`, `set-url`, and `absorbgitdirs` pass their remaining arguments to
+the corresponding `git submodule` command.
+
+## Clean unused mirrors
+
+Register every directory tree that may contain projects using the shared path:
 
 ```bash
-git add scripts android ios
+gits cleanup --append ~/Code
+gits cleanup --list
 ```
 
-Unlike `git add --all`, `gits admit --all` does not stage non-submodule files.
-During a merge, unmerged declared submodule paths are staged from their current
-checkouts, equivalent to `git add <submodule...>`, before the commit is created.
-If any unmerged path remains afterward, admit fails and restores the original
-index.
+Preview first, then apply after eligible mirrors have remained unused for at
+least 30 days:
 
-If the staged commit contains only submodule entries, the editor starts with:
-
-```text
-update submodule: scripts android ios
+```bash
+gits cleanup --dry-run
+gits cleanup
 ```
 
-If it contains any regular file or directory, the editor starts with:
+`gits cleanup` and `gits cleanup --apply` are equivalent. Both perform a fresh
+scan before deletion. If the scan is incomplete or validation is ambiguous,
+nothing is deleted.
 
-```text
-feat:
-```
-
-You can keep, replace, or extend the default text. The commit includes changes
-that were already staged before `gits admit`. If message editing is interrupted
-or cancelled, `gits` restores the index exactly to its pre-command state;
-working tree changes are not discarded.
-
-## How object sharing works
-
-The shared directory contains one bare mirror for each distinct submodule URL.
-Each project still has its own submodule working tree at the path recorded in
-`.gitmodules`. The submodule checkout references the mirror's object database
-through Git alternates.
-
-URLs that differ only by a trailing `.git` suffix use the same mirror. For
-example, `../fe-system-docs` and `../fe-system-docs.git` share one object store.
-
-This design reduces repeated network transfers and object storage while
-preserving normal submodule isolation. It does not replace submodule directories
-with symbolic links, and it does not automatically stage the resulting gitlink
-changes in the superproject.
-
-Cleaning works at mirror granularity. A referenced mirror is preserved in full,
-including objects that are not reachable from its current remote refs. This
-protects checkouts that borrow the mirror through Git alternates; object-level
-garbage collection is intentionally outside the scope of `gits cleanup`.
-Finder's regular `.DS_Store` file is ignored when it appears directly inside
-the shared `repositories` directory. Other unexpected entries still block
-cleanup so that deletion remains fail-closed.
-
-If multiple submodule paths use the same repository URL, standard mode updates
-and resets every path independently. In shared mode, `gits pull` fetches the
-central mirror only once per repository, then updates every checkout that points
-to it while preserving each checkout's current branch. If an upstream is ahead
-of the recorded gitlink, `git status` shows each updated submodule as modified
-until you commit the new gitlinks.
-
-## Commands
-
-| Command | Description |
-| --- | --- |
-| `gits init` | Synchronize and initialize submodules without enabling shared mode. |
-| `gits init <shared_path>` | Enable shared mode for this project, then initialize submodules. |
-| `gits pull` | Fast-forward the superproject, then fast-forward every initialized submodule's current branch to its upstream. |
-| `gits pull <path...>` | Fast-forward the superproject, then fast-forward only the selected initialized submodules on their current branches. A trailing `/` is optional. |
-| `gits pull --all` | Explicitly advance all submodules; equivalent to `gits pull`. |
-| `gits reset` | Unstage changes in the superproject and all initialized submodules. |
-| `gits reset <path...>` | Unstage changes only for the selected submodules. A trailing `/` is optional. |
-| `gits reset --hard` | Discard tracked changes and restore all recorded submodule commits. |
-| `gits reset --hard <path...>` | Discard changes and restore only the selected submodules. |
-| `gits reset [--hard] --all` | Explicitly reset the repository and all submodules. |
-| `gits add <args...>` | Pass all arguments through to `git submodule add`. |
-| `gits admit <path...>` | Stage paths, edit a default message, and create a commit. |
-| `gits admit --all` | Stage all declared submodules, edit a message, and create a commit. |
-| `gits config` | Show the shared path configured for the current project. |
-| `gits config <shared_path>` | Enable or change shared mode for the current project. |
-| `gits config --unset` | Disable shared mode and remove this project's gits-managed alternates. |
-| `gits list` | Show submodules and their shared-cache state. |
-| `gits cleanup --list` | List all registered scan roots. |
-| `gits cleanup --append <root>` | Register a project scan root without scanning or deleting mirrors. |
-| `gits cleanup --remove <root>` | Remove a registered scan root without deleting mirrors. |
-| `gits cleanup --dry-run` | Rescan registered roots and preview without deleting mirrors. |
-| `gits cleanup` | Delete mirrors that have remained unused for at least 30 days. |
-| `gits cleanup --apply` | Explicit equivalent of `gits cleanup`. |
-| `gits status` | Pass `status` through to `git submodule`. |
-| `gits <args...>` | Pass other arguments through to `git submodule`. |
-| `gits --version` | Print the installed version. |
-
-`gits init` checks out the commits recorded by the superproject. `gits pull`
-without paths preserves every initialized top-level submodule's current branch
-and fast-forwards it to its configured upstream. It never checks out a different
-branch implicitly. When the current branch has no upstream, `gits pull` defaults
-to the same-named branch on `origin`. A detached checkout, a missing same-named
-remote branch, or another per-submodule failure is reported, but the remaining
-selected submodules are still processed; the command returns a failure status
-after the traversal. An uninitialized selected submodule is initialized at the
-commit recorded by the superproject without choosing a branch. Pass one or more
-paths to update only those submodules; `scripts` and `scripts/` select the same
-path. When this produces new gitlink values, review them and commit them with
-`gits admit <path...>`.
-
-Use `gits reset --hard` carefully: without paths it discards tracked changes in
-both the superproject and initialized submodules. With paths, ordinary files in
-the superproject and unselected submodules are left unchanged.
 
 ## Development
-
-Run the local checks from the repository root:
 
 ```bash
 bash -n bin/gits tests/gits_test.sh
@@ -356,9 +177,8 @@ ruby -c Formula/gits.rb
 brew style Formula/gits.rb
 ```
 
-For the complete release and tap verification procedure, see
-[`RELEASING.md`](RELEASING.md).
+See [RELEASING.md](RELEASING.md) for the release procedure.
 
 ## License
 
-This project is licensed under the MIT License. See [`LICENSE`](LICENSE).
+MIT. See [LICENSE](LICENSE).
