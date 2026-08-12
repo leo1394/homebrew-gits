@@ -38,8 +38,10 @@ jobs:
           tap_dir="$(brew --repository "$tap")"
           formula="$tap_dir/Formula/gits.rb"
           cp Formula/gits.rb "$formula"
-          ruby -pi -e 'url = "file://" + ENV.fetch("GITHUB_WORKSPACE"); $_ = $_.sub(/^  head .*$/, "  head #{url.inspect}, using: :git")' "$formula"
-          grep -F "head \"file://$GITHUB_WORKSPACE\", using: :git" "$formula"
+          git update-ref refs/heads/gits-ci-head "$GITHUB_SHA"
+          test "$(git rev-parse refs/heads/gits-ci-head)" = "$GITHUB_SHA"
+          ruby -pi -e 'url = "file://" + ENV.fetch("GITHUB_WORKSPACE"); $_ = $_.sub(/^  head .*$/, "  head #{url.inspect}, using: :git, branch: \"gits-ci-head\"")' "$formula"
+          grep -F "head \"file://$GITHUB_WORKSPACE\", using: :git, branch: \"gits-ci-head\"" "$formula"
 
           stable_tag="$(sed -nE 's@^  url ".*/(v[^/]+)/bin/gits".*@\1@p' Formula/gits.rb)"
           test -n "$stable_tag"
