@@ -1,16 +1,31 @@
 # 发布流程
 
-## 1. 验证
+## 1. 准备并验证
+
+从父工作区运行共享发布工具，由它同步 `bin/gits` 中的 `VERSION`、
+`VERSION_DATE`、`VERSION.txt`、Formula、测试和摘要：
+
+```bash
+VERSION=X.Y.Z
+(cd .. && ./publish.sh --target homebrew-gits --version "$VERSION" --prepare)
+```
+
+`gits --version` 是发布协议的一部分，必须准确输出两行：
+
+```text
+gits version X.Y.Z (YYYY-MM-DD)
+https://github.com/leo1394/homebrew-gits/archive/refs/tags/vX.Y.Z.tar.gz
+```
 
 ```bash
 bash -n bin/gits tests/gits_test.sh
 bash tests/gits_test.sh
 ruby -c Formula/gits.rb
-brew style Formula/gits.rb
+brew style Formula/gits.rb .github/workflows/ci.yml
 bin/gits __manpage | mandoc -Tlint
 ```
 
-确认 `bin/gits`、`VERSION.txt`、`Formula/gits.rb`、测试和 `CHANGELOG.md` 中的版本一致。重新计算脚本摘要，并确认与 Formula 一致：
+确认 `bin/gits`、`VERSION.txt`、`Formula/gits.rb`、测试和 `CHANGELOG.md` 中的版本和日期一致。重新计算脚本摘要，并确认与 Formula 一致：
 
 ```bash
 LC_ALL=C shasum -a 256 bin/gits
@@ -20,14 +35,15 @@ LC_ALL=C shasum -a 256 bin/gits
 
 ## 2. 发布源码
 
-将主分支推送至 `https://github.com/leo1394/homebrew-gits`，然后创建并推送与 Formula 一致的 tag：
+提交并推送准备结果后，从父工作区创建并推送与 Formula 一致的 annotated tag：
 
 ```bash
-VERSION=X.Y.Z
-TAG="v${VERSION}"
-git tag -a "$TAG" -m "gits ${VERSION}"
-git push origin master "$TAG"
+git push origin master
+(cd .. && ./publish.sh --target homebrew-gits --version "$VERSION" --apply)
 ```
+
+共享发布工具会先确认工作树干净、`HEAD` 与 `origin/master` 一致，并确认
+本地和远程均不存在同名 tag。
 
 Formula 的稳定 URL 使用该 tag 下的 `bin/gits` 单文件，并用 SHA-256 锁定内容。tag 必须在安装和审计前存在。
 同一脚本通过内部 `__manpage` 指令生成手册，Formula 将其安装为 `gits.1`，无需增加第二个发布产物。

@@ -20,6 +20,13 @@ The same script emits the manual page through the internal `__manpage` action.
 The Formula installs that output as `gits.1`, preserving the single-file release
 artifact.
 
+`gits --version` is part of the release protocol and must print exactly:
+
+```text
+gits version X.Y.Z (YYYY-MM-DD)
+https://github.com/leo1394/homebrew-gits/archive/refs/tags/vX.Y.Z.tar.gz
+```
+
 The release tag must be immutable. Never move, delete, or recreate a published
 tag. If a released artifact is wrong, publish a new patch version.
 
@@ -51,10 +58,16 @@ TAG="v${VERSION}"
 
 Update all version-specific locations:
 
-1. Set `VERSION` in `bin/gits` and `VERSION.txt`.
+1. Set `VERSION` and `VERSION_DATE` in `bin/gits`, and set `VERSION.txt`.
 2. Change the tag in the stable URL in `Formula/gits.rb`.
 3. Update the expected version in the formula test and shell tests.
 4. Add the release notes and date to `CHANGELOG.md`.
+
+The shared publisher performs these edits and checks from the parent workspace:
+
+```bash
+(cd .. && ./publish.sh --target homebrew-gits --version "$VERSION" --prepare)
+```
 
 Do not add an explicit `version` line to the formula. The tagged URL provides
 the version.
@@ -82,7 +95,7 @@ Run the behavior tests and Homebrew style check:
 
 ```bash
 bash tests/gits_test.sh
-brew style Formula/gits.rb
+brew style Formula/gits.rb .github/workflows/ci.yml
 ```
 
 Confirm that the formula checksum matches the local script:
@@ -117,9 +130,12 @@ git push origin master
 Create an annotated tag on that exact commit and push it:
 
 ```bash
-git tag -a "$TAG" -m "gits ${VERSION}"
-git push origin "$TAG"
+(cd .. && ./publish.sh --target homebrew-gits --version "$VERSION" --apply)
 ```
+
+The shared publisher verifies that the working tree is clean, `HEAD` matches
+`origin/master`, and the local and remote tag are absent before creating and
+pushing the annotated tag.
 
 The tag must exist before Homebrew can install or audit the new stable URL. A
 separate GitHub Release and binary asset are not required by the Homebrew
@@ -148,7 +164,8 @@ curl -fsSL \
 Expected output for the example release:
 
 ```text
-gits X.Y.Z
+gits version X.Y.Z (YYYY-MM-DD)
+https://github.com/leo1394/homebrew-gits/archive/refs/tags/vX.Y.Z.tar.gz
 ```
 
 ## 5. Verify the Homebrew tap

@@ -40,6 +40,7 @@ jobs:
           cp Formula/gits.rb "$formula"
           git update-ref refs/heads/gits-ci-head "$GITHUB_SHA"
           test "$(git rev-parse refs/heads/gits-ci-head)" = "$GITHUB_SHA"
+          # shellcheck disable=SC2016
           ruby -pi -e 'url = "file://" + ENV.fetch("GITHUB_WORKSPACE"); $_ = $_.sub(/^  head .*$/, "  head #{url.inspect}, using: :git, branch: \"gits-ci-head\"")' "$formula"
           grep -F "head \"file://$GITHUB_WORKSPACE\", using: :git, branch: \"gits-ci-head\"" "$formula"
 
