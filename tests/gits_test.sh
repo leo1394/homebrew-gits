@@ -68,10 +68,14 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-assert_equals "$("$GITS" --version)" "gits 0.2.15"
+expected_version_output=$'gits version 0.2.16 (2026-08-12)\nhttps://github.com/leo1394/homebrew-gits/archive/refs/tags/v0.2.16.tar.gz'
+assert_equals "$("$GITS" --version)" "$expected_version_output"
+assert_equals "$("$GITS" -v)" "$expected_version_output"
+assert_equals "$("$GITS" version)" "$expected_version_output"
 help_output=$("$GITS" --help)
-assert_contains "$help_output" "gits <command> [<args>]"
-assert_contains "$help_output" "gits help [<command>]"
+assert_contains "$help_output" "gits [-C <path>] <command> [<args>]"
+assert_contains "$help_output" "gits [-C <path>] help [<command>]"
+assert_contains "$help_output" "Run as if gits was started in <path>"
 assert_contains "$help_output" "work with submodules"
 assert_contains "$help_output" "manage shared Git objects"
 assert_contains "$help_output" "gits help <command>"
@@ -106,6 +110,22 @@ assert_contains "$(cat "$TEST_ROOT/help-extra.out")" "help accepts at most one c
 
 outside_git="$TEST_ROOT/outside git"
 mkdir "$outside_git"
+
+c_option_project="$TEST_ROOT/-C project"
+mkdir "$c_option_project"
+git -C "$c_option_project" init -q
+c_option_output=$(cd "$outside_git" && "$GITS" -C "$c_option_project" list)
+assert_contains "$c_option_output" "shared modules repository:"
+assert_contains "$c_option_output" "disabled"
+assert_equals "$(cd "$outside_git" && "$GITS" -C "$c_option_project" --version)" "$expected_version_output"
+if "$GITS" -C > "$TEST_ROOT/c-missing.out" 2>&1; then
+    fail "-C without a path should fail"
+fi
+assert_contains "$(cat "$TEST_ROOT/c-missing.out")" "option -C requires a path"
+if "$GITS" -C "$TEST_ROOT/missing-workspace" list > "$TEST_ROOT/c-invalid.out" 2>&1; then
+    fail "-C with a missing directory should fail"
+fi
+assert_contains "$(cat "$TEST_ROOT/c-invalid.out")" "cannot change to directory"
 unknown_output=$(
     cd "$outside_git"
     "$GITS" sad 2>&1 || true
@@ -129,6 +149,9 @@ manpage_file="$TEST_ROOT/gits.1"
 "$GITS" __manpage > "$manpage_file"
 assert_contains "$(cat "$manpage_file")" '.TH GITS 1'
 assert_contains "$(cat "$manpage_file")" '.SH COMMANDS'
+assert_contains "$(cat "$manpage_file")" '.SH OPTIONS'
+assert_contains "$(cat "$manpage_file")" '\fB\-C\fR \fIpath\fR'
+assert_contains "$(cat "$manpage_file")" 'Run as if gits was started in'
 assert_contains "$(cat "$manpage_file")" '.SH SAFETY'
 if command -v mandoc >/dev/null 2>&1; then
     mandoc -Tlint "$manpage_file"
@@ -160,13 +183,15 @@ assert_contains "$(cat "$zsh_completion_file")" "compdef _gits gits"
 assert_contains "$(cat "$zsh_completion_file")" "'admit:stage changes"
 assert_contains "$(cat "$zsh_completion_file")" "'cleanup:remove or preview"
 assert_contains "$(cat "$zsh_completion_file")" "'version:show the installed version'"
-assert_contains "$(cat "$zsh_completion_file")" "case \"\$words[2]\""
+assert_contains "$(cat "$zsh_completion_file")" "'-C:run as if gits was started in a directory'"
+assert_contains "$(cat "$zsh_completion_file")" 'case "$words[$command_index]"'
 assert_not_contains "$(cat "$zsh_completion_file")" "'commit:"
 assert_not_contains "$(cat "$zsh_completion_file")" "'completion:"
 assert_contains "$(cat "$fish_completion_file")" "complete -c gits"
 assert_contains "$(cat "$fish_completion_file")" "-a admit"
 assert_contains "$(cat "$fish_completion_file")" "-a cleanup"
 assert_contains "$(cat "$fish_completion_file")" "-a version"
+assert_contains "$(cat "$fish_completion_file")" "-s C"
 assert_contains "$(cat "$fish_completion_file")" "__fish_seen_subcommand_from help"
 assert_not_contains "$(cat "$fish_completion_file")" "-a commit"
 assert_not_contains "$(cat "$fish_completion_file")" "-a completion"
@@ -179,6 +204,24 @@ bash_adm_completion=$(/bin/bash -c '
     printf "%s" "${COMPREPLY[*]}"
 ' _ "$bash_completion_file")
 assert_equals "$bash_adm_completion" "admit"
+
+bash_c_path_completion=$(/bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits -C "$2")
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file" "$TEST_ROOT/out")
+assert_contains "$bash_c_path_completion" "$outside_git"
+
+bash_c_command_completion=$(/bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits -C "$2" adm)
+    COMP_CWORD=3
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file" "$outside_git")
+assert_equals "$bash_c_command_completion" "admit"
 
 bash_ad_completion=$(/bin/bash -c '
     source "$1"
@@ -949,8 +992,8 @@ git -C "$TEST_ROOT/add-project/scripts" pull -q --ff-only
 git -C "$TEST_ROOT/add-project/android" pull -q --ff-only
 git -C "$TEST_ROOT/add-project/ios" pull -q --ff-only
 (
-    cd "$TEST_ROOT/add-project"
-    GIT_EDITOR="$EDITOR_ACCEPT" "$GITS" admit --all >/dev/null
+    cd "$outside_git"
+    GIT_EDITOR="$EDITOR_ACCEPT" "$GITS" -C "$TEST_ROOT/add-project" admit --all >/dev/null
 )
 assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "update submodule: scripts android ios"
 

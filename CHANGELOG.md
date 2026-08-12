@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.16 - 2026-08-12
+
+- 新增全局 `-C <path>` 选项，可从其他目录对指定 workspace 执行 gits 命令。
+- `--version`、`-v` 和 `version` 现在同时输出版本号、发布日期及对应 tag 源码归档地址。
+- 更新 `gits(1)` 手册与 Bash、Zsh、Fish 自动补全。
+
 ## 0.2.15 - 2026-08-12
 
 - 将顶层帮助精简为 Git 风格概览，新增 `gits help <command>` 和 `gits <command> --help` 详细帮助。
