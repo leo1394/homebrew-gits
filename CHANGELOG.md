@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.17 - 2026-08-27
+
+- 顶层当前分支尚未配置 upstream、但 `origin` 已有同名分支时，`gits pull` 自动建立 tracking 后继续拉取。
+
 ## 0.2.16 - 2026-08-12
 
 - 新增全局 `-C <path>` 选项，可从其他目录对指定 workspace 执行 gits 命令。

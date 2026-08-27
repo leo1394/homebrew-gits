@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-expected_version_output=$'gits version 0.2.16 (2026-08-12)\nhttps://github.com/leo1394/homebrew-gits/archive/refs/tags/v0.2.16.tar.gz'
+expected_version_output=$'gits version 0.2.17 (2026-08-27)\nhttps://github.com/leo1394/homebrew-gits/archive/refs/tags/v0.2.17.tar.gz'
 assert_equals "$("$GITS" --version)" "$expected_version_output"
 assert_equals "$("$GITS" -v)" "$expected_version_output"
 assert_equals "$("$GITS" version)" "$expected_version_output"
@@ -88,6 +88,7 @@ assert_not_contains "$help_output" "gits completion"
 assert_equals "$("$GITS" help)" "$help_output"
 assert_contains "$("$GITS" help init)" "gits init [<shared-path>]"
 assert_contains "$("$GITS" help pull)" "gits pull [<path>... | --all]"
+assert_contains "$("$GITS" help pull)" "configure that branch as its upstream"
 assert_contains "$("$GITS" help reset)" "gits reset [--hard] [<path>... | --all]"
 assert_contains "$("$GITS" help add)" "git submodule add"
 assert_contains "$("$GITS" help admit)" "gits admit (<path>... | --all)"
@@ -126,6 +127,44 @@ if "$GITS" -C "$TEST_ROOT/missing-workspace" list > "$TEST_ROOT/c-invalid.out" 2
     fail "-C with a missing directory should fail"
 fi
 assert_contains "$(cat "$TEST_ROOT/c-invalid.out")" "cannot change to directory"
+
+mkdir "$TEST_ROOT/root-source"
+git -C "$TEST_ROOT/root-source" init -q
+echo "root branch content" > "$TEST_ROOT/root-source/content.txt"
+git -C "$TEST_ROOT/root-source" add content.txt
+git -C "$TEST_ROOT/root-source" commit -qm "initial root branch"
+git clone -q --bare "$TEST_ROOT/root-source" "$TEST_ROOT/root-origin.git"
+git -C "$TEST_ROOT/root-source" remote add origin "$TEST_ROOT/root-origin.git"
+git -C "$TEST_ROOT/root-source" checkout -qb yuyuelin/tt-uploading-tips
+echo "new branch content" >> "$TEST_ROOT/root-source/content.txt"
+git -C "$TEST_ROOT/root-source" commit -qam "new root branch"
+git -C "$TEST_ROOT/root-source" push -q origin yuyuelin/tt-uploading-tips
+if git -C "$TEST_ROOT/root-source" rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
+    fail "plain git push unexpectedly configured an upstream"
+fi
+git -C "$TEST_ROOT/root-source" update-ref -d refs/remotes/origin/yuyuelin/tt-uploading-tips
+if ! root_pull_output=$(
+    cd "$TEST_ROOT/root-source"
+    "$GITS" pull 2>&1
+); then
+    fail "gits pull did not configure the available same-named upstream: $root_pull_output"
+fi
+assert_contains "$root_pull_output" "git branch --set-upstream-to=origin/yuyuelin/tt-uploading-tips yuyuelin/tt-uploading-tips"
+assert_equals "$(git -C "$TEST_ROOT/root-source" rev-parse --abbrev-ref '@{upstream}')" "origin/yuyuelin/tt-uploading-tips"
+
+git -C "$TEST_ROOT/root-source" checkout -qb local-only
+if local_only_pull_output=$(
+    cd "$TEST_ROOT/root-source"
+    "$GITS" pull 2>&1
+); then
+    fail "gits pull unexpectedly accepted a branch missing from origin"
+fi
+assert_contains "$local_only_pull_output" "There is no tracking information for the current branch"
+assert_not_contains "$local_only_pull_output" "git branch --set-upstream-to=origin/local-only local-only"
+if git -C "$TEST_ROOT/root-source" rev-parse --abbrev-ref '@{upstream}' >/dev/null 2>&1; then
+    fail "gits pull configured an unavailable upstream"
+fi
+
 unknown_output=$(
     cd "$outside_git"
     "$GITS" sad 2>&1 || true
@@ -152,6 +191,7 @@ assert_contains "$(cat "$manpage_file")" '.SH COMMANDS'
 assert_contains "$(cat "$manpage_file")" '.SH OPTIONS'
 assert_contains "$(cat "$manpage_file")" '\fB\-C\fR \fIpath\fR'
 assert_contains "$(cat "$manpage_file")" 'Run as if gits was started in'
+assert_contains "$(cat "$manpage_file")" 'It does not create or push a missing remote branch.'
 assert_contains "$(cat "$manpage_file")" '.SH SAFETY'
 if command -v mandoc >/dev/null 2>&1; then
     mandoc -Tlint "$manpage_file"

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-VERSION="0.2.16"
-VERSION_DATE="2026-08-12"
+VERSION="0.2.17"
+VERSION_DATE="2026-08-27"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -118,6 +118,9 @@ usage:
 Fast-forward the superproject, then fast-forward selected initialized
 submodules on their current branches. Without paths, update every declared
 top-level submodule. --all is an explicit equivalent.
+
+If the current superproject branch has no upstream and origin contains a
+same-named branch, configure that branch as its upstream before pulling.
 
 The command never chooses a different branch implicitly. A path may include or
 omit its trailing slash.
@@ -604,6 +607,11 @@ the shared repository.
 .B gits pull
 first runs a fast-forward-only superproject pull with recursive submodule
 checkout disabled.
+If the current superproject branch has no upstream and
+.B origin
+contains a same-named branch, gits configures that remote branch as the
+upstream before pulling.
+It does not create or push a missing remote branch.
 It then synchronizes submodule configuration and processes the selected
 top-level paths.
 .PP
@@ -1131,6 +1139,37 @@ normal_init() {
     done < <(submodule_entries "$root")
 }
 
+configure_available_superproject_upstream() {
+    local root="$1"
+    local branch
+    local upstream
+    local remote_ref
+
+    branch=$(git -C "$root" symbolic-ref --short -q HEAD)
+    [ -n "$branch" ] || return 0
+    upstream=$(git -C "$root" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)
+    [ -z "$upstream" ] || return 0
+    git -C "$root" remote get-url origin >/dev/null 2>&1 || return 0
+    git -C "$root" ls-remote --exit-code --heads origin "refs/heads/$branch" >/dev/null 2>&1 || return 0
+
+    remote_ref="refs/remotes/origin/$branch"
+    if ! git -C "$root" show-ref --verify --quiet "$remote_ref"; then
+        print_cmd "git fetch --no-recurse-submodules origin +refs/heads/$branch:$remote_ref"
+        git -C "$root" fetch --no-recurse-submodules origin "+refs/heads/$branch:$remote_ref" || return 1
+    fi
+
+    print_cmd "git branch --set-upstream-to=origin/$branch $branch"
+    git -C "$root" branch --set-upstream-to="origin/$branch" "$branch"
+}
+
+pull_superproject() {
+    local root="$1"
+
+    configure_available_superproject_upstream "$root" || return 1
+    print_cmd "git pull --ff-only --no-recurse-submodules"
+    git -C "$root" -c fetch.recurseSubmodules=false pull --ff-only --no-recurse-submodules
+}
+
 normal_pull() {
     local root="$1"
     shift
@@ -1138,8 +1177,7 @@ normal_pull() {
     local path
     local status=0
 
-    print_cmd "git pull --ff-only --no-recurse-submodules"
-    git -C "$root" -c fetch.recurseSubmodules=false pull --ff-only --no-recurse-submodules || return 1
+    pull_superproject "$root" || return 1
     validate_submodule_paths "$root" "$@" || return 1
     # print_cmd "git submodule sync --recursive"
     git -C "$root" submodule sync --recursive || return 1
@@ -1533,8 +1571,7 @@ shared_pull() {
     local base="$2"
     shift 2
 
-    print_cmd "git pull --ff-only --no-recurse-submodules"
-    git -C "$root" -c fetch.recurseSubmodules=false pull --ff-only --no-recurse-submodules || return 1
+    pull_superproject "$root" || return 1
     validate_submodule_paths "$root" "$@" || return 1
     shared_update "$root" "$base" true "$@"
 }
