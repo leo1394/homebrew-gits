@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-expected_version_output=$'gits version 0.2.17 (2026-08-27)\nhttps://github.com/leo1394/homebrew-gits/archive/refs/tags/v0.2.17.tar.gz'
+expected_version_output=$'gits version 0.2.18 (2026-08-27)\nhttps://github.com/leo1394/homebrew-gits'
 assert_equals "$("$GITS" --version)" "$expected_version_output"
 assert_equals "$("$GITS" -v)" "$expected_version_output"
 assert_equals "$("$GITS" version)" "$expected_version_output"
@@ -988,12 +988,14 @@ assert_contains "$locked_init_output" "shared modules repository is locked"
 rmdir "$CLEAN_SHARED/.gits/lock"
 
 EDITOR_ACCEPT="$TEST_ROOT/editor-accept"
+EDITOR_CANCEL="$TEST_ROOT/editor-cancel"
 EDITOR_SUPPLEMENT="$TEST_ROOT/editor-supplement"
 EDITOR_INTERRUPT="$TEST_ROOT/editor-interrupt"
-printf '%s\n' '#!/bin/sh' 'exit 0' > "$EDITOR_ACCEPT"
+printf '%s\n' '#!/bin/sh' 'touch "$1"' 'exit 0' > "$EDITOR_ACCEPT"
+printf '%s\n' '#!/bin/sh' 'exit 0' > "$EDITOR_CANCEL"
 printf '%s\n' '#!/bin/sh' 'first=$(sed -n "1p" "$1")' 'printf "%s custom detail\n" "$first" > "$1"' > "$EDITOR_SUPPLEMENT"
 printf '%s\n' '#!/bin/sh' 'kill -INT "$PPID"' 'exit 130' > "$EDITOR_INTERRUPT"
-chmod +x "$EDITOR_ACCEPT" "$EDITOR_SUPPLEMENT" "$EDITOR_INTERRUPT"
+chmod +x "$EDITOR_ACCEPT" "$EDITOR_CANCEL" "$EDITOR_SUPPLEMENT" "$EDITOR_INTERRUPT"
 
 mkdir "$TEST_ROOT/add-project"
 git -C "$TEST_ROOT/add-project" init -q
@@ -1047,6 +1049,20 @@ assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "feat:"
 advance_submodule "mixed update"
 git -C "$TEST_ROOT/add-project/ios" pull -q --ff-only
 echo "root update" >> "$TEST_ROOT/add-project/root.txt"
+before_cancel_head=$(git -C "$TEST_ROOT/add-project" rev-parse HEAD)
+before_cancel_index=$(git -C "$TEST_ROOT/add-project" diff --cached)
+if cancel_admit_output=$(
+    cd "$TEST_ROOT/add-project"
+    GIT_EDITOR="$EDITOR_CANCEL" "$GITS" admit . 2>&1
+); then
+    fail "admit with an unsaved message unexpectedly succeeded"
+fi
+assert_contains "$cancel_admit_output" "commit message was not saved"
+assert_contains "$cancel_admit_output" "admit cancelled; index restored"
+assert_equals "$(git -C "$TEST_ROOT/add-project" rev-parse HEAD)" "$before_cancel_head"
+assert_equals "$(git -C "$TEST_ROOT/add-project" diff --cached)" "$before_cancel_index"
+assert_contains "$(git -C "$TEST_ROOT/add-project" diff --name-only)" "ios"
+assert_contains "$(git -C "$TEST_ROOT/add-project" diff --name-only)" "root.txt"
 (
     cd "$TEST_ROOT/add-project"
     GIT_EDITOR="$EDITOR_ACCEPT" "$GITS" admit . >/dev/null

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-VERSION="0.2.17"
+VERSION="0.2.18"
 VERSION_DATE="2026-08-27"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
@@ -36,7 +36,7 @@ git_root() {
 
 print_version() {
     printf 'gits version %s (%s)\n' "$VERSION" "$VERSION_DATE"
-    printf 'https://github.com/leo1394/homebrew-gits/archive/refs/tags/v%s.tar.gz\n' "$VERSION"
+    printf 'https://github.com/leo1394/homebrew-gits\n'
 }
 
 usage() {
@@ -94,7 +94,7 @@ usage:
 
 Show the installed gits version.
 
-Output includes the release date and tagged source archive URL.
+Output includes the release date and project homepage.
 EOF
             ;;
         init)
@@ -160,7 +160,8 @@ default message, and create a commit. --all selects every submodule declared in
 .gitmodules; it does not stage unrelated files.
 
 If message editing or commit creation is cancelled, gits restores the index to
-its pre-command state. Working tree changes are not discarded.
+its pre-command state. Exiting the editor without saving also cancels the
+operation. Working tree changes are not discarded.
 EOF
             ;;
         config)
@@ -584,7 +585,7 @@ is equivalent to
 .BR "gits cleanup --help" .
 .TP
 .B version
-Print the installed gits version, release date, and tagged source archive URL.
+Print the installed gits version, release date, and project homepage.
 .SH SHARED OBJECTS
 The shared directory contains one bare mirror for each normalized submodule
 URL.
@@ -639,6 +640,8 @@ If regular files are included, the initial message is
 Changes already staged before the command remain part of the commit.
 If editing is interrupted, the message is empty, unresolved paths remain, or
 commit creation fails, gits restores the index to its pre-command state.
+Exiting the editor without saving the message also restores the index, even
+when the editor exits successfully.
 Working tree changes are never discarded by this rollback.
 .SH CLEANUP SAFETY
 Cleanup operates at whole-mirror granularity.
@@ -1783,6 +1786,8 @@ admit_paths() {
     local before_index
     local after_index
     local default_message
+    local editor
+    local editor_wrapper=""
     local status
     local key
     local path
@@ -1830,7 +1835,7 @@ admit_paths() {
         return 1
     }
 
-    trap 'restore_index "$index_path" "$backup" "$had_index"; rm -f "$backup"; error "admit cancelled; index restored"; trap - INT TERM HUP; exit 130' INT TERM HUP
+    trap 'restore_index "$index_path" "$backup" "$had_index"; rm -f "$backup" "$editor_wrapper"; error "admit cancelled; index restored"; trap - INT TERM HUP; exit 130' INT TERM HUP
 
     print_cmd "git add -- ${paths[*]}"
     git -C "$root" add -- "${paths[@]}" || {
@@ -1869,16 +1874,52 @@ admit_paths() {
     }
 
     echo "default commit message: $default_message"
-    git -C "$root" commit --edit -m "$default_message" || {
-        status=$?
+    editor=$(git -C "$root" var GIT_EDITOR) || {
         restore_index "$index_path" "$backup" "$had_index"
         rm -f "$backup"
+        trap - INT TERM HUP
+        error "cannot determine Git editor; index restored"
+        return 1
+    }
+    editor_wrapper=$(mktemp "${TMPDIR:-/tmp}/gits-editor.XXXXXX") || {
+        restore_index "$index_path" "$backup" "$had_index"
+        rm -f "$backup"
+        trap - INT TERM HUP
+        return 1
+    }
+    printf '%s\n' \
+        '#!/bin/bash' \
+        'marker=$(mktemp "${TMPDIR:-/tmp}/gits-message.XXXXXX") || exit 1' \
+        'trap '\''rm -f "$marker"'\'' EXIT' \
+        'touch -t 200001010000 "$marker" "$1" || exit 1' \
+        '/bin/sh -c "$GITS_ADMIT_EDITOR \"\$@\"" gits-admit-editor "$1"' \
+        'status=$?' \
+        '[ "$status" -eq 0 ] || exit "$status"' \
+        'if [ ! "$1" -nt "$marker" ]; then' \
+        '    printf '\''gits: commit message was not saved\n'\'' >&2' \
+        '    exit 1' \
+        'fi' > "$editor_wrapper" || {
+        restore_index "$index_path" "$backup" "$had_index"
+        rm -f "$backup" "$editor_wrapper"
+        trap - INT TERM HUP
+        return 1
+    }
+    chmod +x "$editor_wrapper" || {
+        restore_index "$index_path" "$backup" "$had_index"
+        rm -f "$backup" "$editor_wrapper"
+        trap - INT TERM HUP
+        return 1
+    }
+    GITS_ADMIT_EDITOR="$editor" GIT_EDITOR="$editor_wrapper" git -C "$root" commit --edit -m "$default_message" || {
+        status=$?
+        restore_index "$index_path" "$backup" "$had_index"
+        rm -f "$backup" "$editor_wrapper"
         trap - INT TERM HUP
         error "admit cancelled; index restored"
         return "$status"
     }
 
-    rm -f "$backup"
+    rm -f "$backup" "$editor_wrapper"
     trap - INT TERM HUP
 }
 
