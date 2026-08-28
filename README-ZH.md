@@ -49,25 +49,48 @@ Git 子模块存储。
 
 ## 要求
 
-- 使用 Homebrew 的 macOS 或 Linux
+- macOS 或 Linux
 - Bash
 - Git 2.31 或更高版本
+- Homebrew（推荐）或用`curl`通过 Bash 安装
 
 Homebrew Formula 在 macOS 上使用系统提供的 Git；在 Linux 上会在需要时安装
-Git Formula。
+Git Formula。Bash 安装脚本会检测 Git；如果尚未安装，会通过系统可用的包管理器
+安装 Git。
 
 ## 安装
 
+### Homebrew
+
 ```bash
-brew tap leo1394/gits
-brew install gits
+brew install leo1394/gits/gits
 ```
+
+使用完整 Formula 名称时只安装并信任该 Formula，不需要先执行单独的
+`brew tap` 命令。
 
 后续升级：
 
 ```bash
 brew update
 brew upgrade gits
+```
+
+### Bash 
+
+如果本机 Homebrew 版本过低，无法安装 Formula，可直接安装已发布的脚本：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | bash
+```
+
+安装脚本会使用同一 release tag 中 Formula 记录的 SHA256 校验下载内容，并将
+`gits` 安装到 `~/.local/bin`。如果脚本提示该目录不在 `PATH` 中，请按提示添加；
+再次执行同一命令即可升级。也可以指定版本或安装目录：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.19 bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_INSTALL_DIR=/absolute/bin bash
 ```
 
 ## 快速开始
@@ -159,7 +182,7 @@ gits cleanup
 ## 开发
 
 ```bash
-bash -n bin/gits tests/gits_test.sh
+bash -n bin/gits install.sh tests/gits_test.sh
 bash tests/gits_test.sh
 ruby -c Formula/gits.rb
 brew style Formula/gits.rb

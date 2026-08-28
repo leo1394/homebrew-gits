@@ -58,25 +58,49 @@ using a shared path is covered by a registered scan root.
 
 ## Requirements
 
-- macOS or Linux with Homebrew
+- macOS or Linux
 - Bash
 - Git 2.31 or later
+- Homebrew (recommended) or `curl` for the Bash fallback
 
 The Homebrew formula uses the Git provided by macOS. On Linux, Homebrew installs
-its Git formula when needed.
+its Git formula when needed. The Bash installer detects a missing Git and uses
+the available system package manager to install it.
 
 ## Install
 
+### Homebrew
+
 ```bash
-brew tap leo1394/gits
-brew install gits
+brew install leo1394/gits/gits
 ```
+
+The fully qualified name installs and trusts only this Formula; a separate
+`brew tap` command is not required.
 
 Upgrade later with:
 
 ```bash
 brew update
 brew upgrade gits
+```
+
+### Bash 
+
+If the installed Homebrew is too old to install the Formula, install the
+published script directly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | bash
+```
+
+The installer verifies the download against the SHA256 in the same release tag
+and installs `gits` to `~/.local/bin`. Add that directory to `PATH` if prompted.
+Run the command again to upgrade. To choose a version or destination:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.19 bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_INSTALL_DIR=/absolute/bin bash
 ```
 
 ## Quick start
@@ -171,7 +195,7 @@ nothing is deleted.
 ## Development
 
 ```bash
-bash -n bin/gits tests/gits_test.sh
+bash -n bin/gits install.sh tests/gits_test.sh
 bash tests/gits_test.sh
 ruby -c Formula/gits.rb
 brew style Formula/gits.rb

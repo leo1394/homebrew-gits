@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-expected_version_output=$'gits version 0.2.18 (2026-08-27)\nhttps://github.com/leo1394/homebrew-gits'
+expected_version_output=$'gits version 0.2.19 (2026-08-28)\nhttps://github.com/leo1394/homebrew-gits'
 assert_equals "$("$GITS" --version)" "$expected_version_output"
 assert_equals "$("$GITS" -v)" "$expected_version_output"
 assert_equals "$("$GITS" version)" "$expected_version_output"
@@ -111,6 +111,16 @@ assert_contains "$(cat "$TEST_ROOT/help-extra.out")" "help accepts at most one c
 
 outside_git="$TEST_ROOT/outside git"
 mkdir "$outside_git"
+
+assert_equals "$(cd "$outside_git" && "$GITS" help)" "$help_output"
+assert_equals "$(cd "$outside_git" && "$GITS" --help)" "$help_output"
+assert_equals "$(cd "$outside_git" && "$GITS" version)" "$expected_version_output"
+assert_equals "$(cd "$outside_git" && "$GITS" --version)" "$expected_version_output"
+assert_equals "$(cd "$outside_git" && "$GITS" -v)" "$expected_version_output"
+assert_equals "$(cd "$outside_git" && "$GITS" help pull)" "$("$GITS" help pull)"
+assert_equals "$(cd "$outside_git" && "$GITS" version --help)" "$("$GITS" version --help)"
+assert_equals "$("$GITS" -C "$outside_git" help)" "$help_output"
+assert_equals "$("$GITS" -C "$outside_git" version)" "$expected_version_output"
 
 c_option_project="$TEST_ROOT/-C project"
 mkdir "$c_option_project"

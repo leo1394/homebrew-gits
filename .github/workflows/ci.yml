@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check shell syntax
-        run: bash -n bin/gits tests/gits_test.sh
+        run: bash -n bin/gits install.sh tests/gits_test.sh
       - name: Run tests
         run: bash tests/gits_test.sh
 
