@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-expected_version_output=$'gits version 0.2.19 (2026-08-28)\nhttps://github.com/leo1394/homebrew-gits'
+expected_version_output=$'gits version 0.2.20 (2026-09-01)\nhttps://github.com/leo1394/homebrew-gits'
 assert_equals "$("$GITS" --version)" "$expected_version_output"
 assert_equals "$("$GITS" -v)" "$expected_version_output"
 assert_equals "$("$GITS" version)" "$expected_version_output"
@@ -208,6 +208,17 @@ if command -v mandoc >/dev/null 2>&1; then
 fi
 assert_contains "$(cat "$ROOT/Formula/gits.rb")" 'chmod 0755, bin/"gits"'
 assert_contains "$(cat "$ROOT/Formula/gits.rb")" 'Utils.safe_popen_read(bin/"gits", "__manpage")'
+
+project_version=$(<"$ROOT/VERSION.txt")
+bash -n "$ROOT/install.sh"
+for readme in "$ROOT/README.md" "$ROOT/README-ZH.md"; do
+    assert_contains "$(cat "$readme")" 'brew install leo1394/gits/gits'
+    assert_contains "$(cat "$readme")" "GITS_VERSION=$project_version"
+    assert_not_contains "$(cat "$readme")" 'brew tap leo1394/gits'
+done
+ci_workflow=$(<"$ROOT/.github/workflows/ci.yml")
+assert_contains "$ci_workflow" 'run: bash -n bin/gits install.sh tests/gits_test.sh'
+assert_contains "$ci_workflow" 'run: brew style Formula/gits.rb install.sh'
 
 bash_completion_file="$TEST_ROOT/gits.bash"
 zsh_completion_file="$TEST_ROOT/_gits"
@@ -1131,5 +1142,21 @@ fi
 after_interrupt=$(git -C "$TEST_ROOT/add-project" diff --cached)
 assert_equals "$after_interrupt" "$before_interrupt"
 assert_equals "$(git -C "$TEST_ROOT/add-project" diff --cached --name-only)" "root.txt"
+
+git -C "$TEST_ROOT/add-project" restore --staged root.txt
+git -C "$TEST_ROOT/add-project" restore root.txt
+mkdir -p "$TEST_ROOT/add-project/internal"
+git -C "$TEST_ROOT/add-project" submodule add -q \
+    "$TEST_ROOT/submodule-origin.git" internal/go-api-exchange
+git -C "$TEST_ROOT/add-project" commit -qam "add nested test submodule"
+advance_submodule "update nested submodule"
+git -C "$TEST_ROOT/add-project/internal/go-api-exchange" pull -q --ff-only
+nested_admit_output=$(
+    cd "$TEST_ROOT/add-project/internal"
+    GIT_EDITOR="$EDITOR_ACCEPT" "$GITS" admit go-api-exchange
+)
+assert_contains "$nested_admit_output" "git add -- go-api-exchange"
+assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" \
+    "update submodule: internal/go-api-exchange"
 
 echo "PASS: gits tests"

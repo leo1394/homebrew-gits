@@ -1,7 +1,7 @@
 #!/bin/bash
 
-VERSION="0.2.19"
-VERSION_DATE="2026-08-28"
+VERSION="0.2.20"
+VERSION_DATE="2026-09-01"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -1779,7 +1779,8 @@ default_commit_message() {
 
 admit_paths() {
     local root="$1"
-    shift
+    local add_directory="$2"
+    shift 2
     local index_path
     local backup
     local had_index=false
@@ -1811,6 +1812,7 @@ admit_paths() {
             error "no submodules found"
             return 1
         }
+        add_directory="$root"
     else
         for requested in "$@"; do
             [ "${requested#-}" = "$requested" ] || {
@@ -1838,7 +1840,7 @@ admit_paths() {
     trap 'restore_index "$index_path" "$backup" "$had_index"; rm -f "$backup" "$editor_wrapper"; error "admit cancelled; index restored"; trap - INT TERM HUP; exit 130' INT TERM HUP
 
     print_cmd "git add -- ${paths[*]}"
-    git -C "$root" add -- "${paths[@]}" || {
+    git -C "$add_directory" add -- "${paths[@]}" || {
         status=$?
         restore_index "$index_path" "$backup" "$had_index"
         rm -f "$backup"
@@ -2556,7 +2558,7 @@ main() {
             ;;
         admit)
             shift
-            admit_paths "$root" "$@"
+            admit_paths "$root" "$PWD" "$@"
             ;;
         config)
             [ -z "$3" ] || {

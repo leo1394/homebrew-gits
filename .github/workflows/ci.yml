@@ -26,8 +26,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check manual page
         run: bin/gits __manpage | mandoc -Tlint
-      - name: Check Formula style
-        run: brew style Formula/gits.rb
+      - name: Check Formula and installer style
+        run: brew style Formula/gits.rb install.sh
       - name: Install and test published stable and local HEAD Formula
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1

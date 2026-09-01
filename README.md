@@ -99,7 +99,7 @@ and installs `gits` to `~/.local/bin`. Add that directory to `PATH` if prompted.
 Run the command again to upgrade. To choose a version or destination:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.19 bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.20 bash
 curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_INSTALL_DIR=/absolute/bin bash
 ```
 
