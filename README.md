@@ -1,5 +1,9 @@
 # gits
 
+<p align="center">
+  <img src="assets/gits-banner.png" alt="gits — Safer submodules. Shared objects. Independent workspaces." width="100%">
+</p>
+
 **English** | [简体中文](README-ZH.md)
 
 [![CI](https://github.com/leo1394/homebrew-gits/actions/workflows/ci.yml/badge.svg)](https://github.com/leo1394/homebrew-gits/actions/workflows/ci.yml)

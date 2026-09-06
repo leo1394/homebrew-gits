@@ -1,5 +1,9 @@
 # gits
 
+<p align="center">
+  <img src="assets/gits-banner-zh.png" alt="gits — 更安全的子模块·共享对象·独立工作区" width="100%">
+</p>
+
 [English](README.md) | **简体中文**
 
 [![CI](https://github.com/leo1394/homebrew-gits/actions/workflows/ci.yml/badge.svg)](https://github.com/leo1394/homebrew-gits/actions/workflows/ci.yml)
