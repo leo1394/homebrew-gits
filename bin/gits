@@ -732,6 +732,65 @@ gits help cleanup
 EOF
 }
 
+completion_submodule_paths() {
+    local mode="$1"
+    local root
+    local prefix
+    local key
+    local path
+
+    root=$(git_root) || return 0
+    prefix=$(git rev-parse --show-prefix 2>/dev/null) || return 0
+
+    while IFS= read -r -d '' key && IFS= read -r -d '' path; do
+        [ -n "$key" ] || continue
+        case "$mode" in
+            root)
+                printf '%s\n' "$path"
+                ;;
+            cwd)
+                if [ -z "$prefix" ]; then
+                    printf '%s\n' "$path"
+                elif [[ "$path" == "$prefix"* ]]; then
+                    printf '%s\n' "${path#"$prefix"}"
+                fi
+                ;;
+        esac
+    done < <(submodule_entries "$root")
+}
+
+completion_changed_paths() {
+    local mode="$1"
+    local root
+    local prefix
+    local record
+    local status
+    local path
+
+    root=$(git_root) || return 0
+    prefix=$(git rev-parse --show-prefix 2>/dev/null) || return 0
+
+    while IFS= read -r -d '' record; do
+        status=${record:0:2}
+        path=${record:3}
+        if [[ "$status" == *R* ]] || [[ "$status" == *C* ]]; then
+            IFS= read -r -d '' record || true
+        fi
+        case "$mode" in
+            root)
+                printf '%s\n' "$path"
+                ;;
+            cwd)
+                if [ -z "$prefix" ]; then
+                    printf '%s\n' "$path"
+                elif [[ "$path" == "$prefix"* ]]; then
+                    printf '%s\n' "${path#"$prefix"}"
+                fi
+                ;;
+        esac
+    done < <(git -C "$root" status --porcelain=v1 -z --untracked-files=all --ignore-submodules=none 2>/dev/null)
+}
+
 completion_script() {
     case "$1" in
         bash)
@@ -744,6 +803,29 @@ _gits_complete_paths() {
     while IFS= read -r candidate; do
         COMPREPLY+=( "$candidate" )
     done < <(compgen "$path_type" -- "$path_prefix")
+}
+
+_gits_complete_dynamic_paths() {
+    local action="$1"
+    local mode="$2"
+    local path_prefix="$3"
+    local candidate
+    local existing
+    local index=1
+    local -a global_args=()
+
+    while [ "$index" -lt "$command_index" ] && [ "${COMP_WORDS[$index]}" = "-C" ]; do
+        global_args+=( -C "${COMP_WORDS[$((index + 1))]}" )
+        index=$((index + 2))
+    done
+
+    while IFS= read -r candidate; do
+        [[ "$candidate" == "$path_prefix"* ]] || continue
+        for existing in "${COMPREPLY[@]}"; do
+            [ "$existing" = "$candidate" ] && continue 2
+        done
+        COMPREPLY+=( "$candidate" )
+    done < <(command gits "${global_args[@]}" "$action" "$mode" 2>/dev/null)
 }
 
 _gits() {
@@ -782,14 +864,14 @@ _gits() {
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=( $(compgen -W "--all" -- "$cur") )
             else
-                _gits_complete_paths -f "$cur"
+                _gits_complete_dynamic_paths __complete-changed-paths cwd "$cur"
             fi
             ;;
         pull)
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=( $(compgen -W "--all" -- "$cur") )
             else
-                _gits_complete_paths -f "$cur"
+                _gits_complete_dynamic_paths __complete-submodules root "$cur"
             fi
             ;;
         cleanup)
@@ -808,7 +890,7 @@ _gits() {
             if [[ "$cur" == -* ]]; then
                 COMPREPLY=( $(compgen -W "--hard --all" -- "$cur") )
             else
-                _gits_complete_paths -f "$cur"
+                _gits_complete_dynamic_paths __complete-submodules root "$cur"
             fi
             ;;
         config)
@@ -836,18 +918,97 @@ _gits() {
                     ;;
             esac
             ;;
+        status)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "-q --quiet --cached --recursive" -- "$cur") )
+            else
+                _gits_complete_dynamic_paths __complete-submodules root "$cur"
+            fi
+            ;;
+        update)
+            case "$prev" in
+                --reference)
+                    _gits_complete_paths -d "$cur"
+                    ;;
+                --filter)
+                    ;;
+                *)
+                    if [[ "$cur" == -* ]]; then
+                        COMPREPLY=( $(compgen -W "--init --filter --remote -N --no-fetch -f --force --checkout --merge --rebase --recommend-shallow --no-recommend-shallow --reference --recursive --single-branch --no-single-branch --" -- "$cur") )
+                    else
+                        _gits_complete_dynamic_paths __complete-submodules root "$cur"
+                    fi
+                    ;;
+            esac
+            ;;
+        deinit)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "-f --force --all --" -- "$cur") )
+            else
+                _gits_complete_dynamic_paths __complete-submodules root "$cur"
+            fi
+            ;;
+        foreach)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--recursive" -- "$cur") )
+            fi
+            ;;
+        summary)
+            if [ "$prev" != "--summary-limit" ]; then
+                if [[ "$cur" == -* ]]; then
+                    COMPREPLY=( $(compgen -W "--cached --files --summary-limit" -- "$cur") )
+                else
+                    _gits_complete_dynamic_paths __complete-submodules root "$cur"
+                fi
+            fi
+            ;;
+        sync)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--recursive" -- "$cur") )
+            else
+                _gits_complete_dynamic_paths __complete-submodules root "$cur"
+            fi
+            ;;
+        set-branch)
+            if [ "$prev" != "--branch" ]; then
+                if [[ "$cur" == -* ]]; then
+                    COMPREPLY=( $(compgen -W "--default --branch --" -- "$cur") )
+                else
+                    _gits_complete_dynamic_paths __complete-submodules root "$cur"
+                fi
+            fi
+            ;;
+        set-url|absorbgitdirs)
+            if [[ "$cur" == -* ]]; then
+                COMPREPLY=( $(compgen -W "--" -- "$cur") )
+            else
+                _gits_complete_dynamic_paths __complete-submodules root "$cur"
+            fi
+            ;;
     esac
 }
 
-complete -F _gits gits
+complete -o filenames -F _gits gits
 EOF
             ;;
         zsh)
             cat <<'EOF'
 #compdef gits
 
+_gits_dynamic_paths() {
+    local action="$1"
+    local mode="$2"
+    local -a candidates
+
+    candidates=("${(@f)$(command gits "${gits_global_args[@]}" "$action" "$mode" 2>/dev/null)}")
+    (( ${#candidates} )) && _describe 'path' candidates
+}
+
 _gits() {
     local -a commands
+    local -a gits_global_args
+    local state
+    local subcommand
 
     commands=(
         'init:initialize submodules'
@@ -877,28 +1038,37 @@ _gits() {
     )
 
     local command_index=2
-    if [[ "$words[2]" == "-C" ]]; then
-        if (( CURRENT == 3 )); then
+    while [[ "$words[$command_index]" == "-C" ]]; do
+        if (( CURRENT == command_index + 1 )); then
             _directories
             return
         fi
-        command_index=4
-    fi
+        gits_global_args+=( -C "$words[$((command_index + 1))]" )
+        (( command_index += 2 ))
+    done
 
     if (( CURRENT == command_index )); then
         _describe 'command' commands
         return
     fi
 
-    case "$words[$command_index]" in
+    subcommand="$words[$command_index]"
+    words=("${(@)words[$command_index,-1]}")
+    CURRENT=$((CURRENT - command_index + 1))
+
+    case "$subcommand" in
         help)
             _arguments '1:command:(init pull reset add admit config list cleanup status update deinit foreach summary sync set-branch set-url absorbgitdirs help version)'
             ;;
         admit)
-            _arguments '--all[stage every declared submodule]' '*:path:_files'
+            _arguments '--all[stage every declared submodule]' '*:path:->admit_paths'
+            if [[ "$state" == "admit_paths" ]]; then
+                _gits_dynamic_paths __complete-changed-paths cwd
+            fi
             ;;
         pull)
-            _arguments '--all[update every declared submodule]' '*:submodule path:_files'
+            _arguments '--all[update every declared submodule]' '*:submodule path:->submodules'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
             ;;
         cleanup)
             _arguments \
@@ -912,7 +1082,8 @@ _gits() {
             _arguments \
                 '--hard[discard working tree changes]' \
                 '--all[reset the repository and every declared submodule]' \
-                '*:submodule path:_files'
+                '*:submodule path:->submodules'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
             ;;
         config)
             _arguments '--unset[disable shared mode]' '1:shared directory:_directories'
@@ -935,6 +1106,70 @@ _gits() {
                 '1:repository:_files' \
                 '2:path:_files'
             ;;
+        status)
+            _arguments \
+                '(-q --quiet)'{-q,--quiet}'[suppress progress output]' \
+                '--cached[use the commit recorded in the index]' \
+                '--recursive[recurse into nested submodules]' \
+                '*:submodule path:->submodules'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
+            ;;
+        update)
+            _arguments \
+                '--init[initialize unregistered submodules]' \
+                '--filter[apply a partial clone filter]:filter:' \
+                '--remote[use the remote tracking branch]' \
+                '(-N --no-fetch)'{-N,--no-fetch}'[do not fetch new objects]' \
+                '(-f --force)'{-f,--force}'[force checkout updates]' \
+                '(--checkout --merge --rebase)--checkout[checkout recorded commits]' \
+                '(--checkout --merge --rebase)--merge[merge recorded commits]' \
+                '(--checkout --merge --rebase)--rebase[rebase onto recorded commits]' \
+                '(--recommend-shallow --no-recommend-shallow)--recommend-shallow[use recommended shallow setting]' \
+                '(--recommend-shallow --no-recommend-shallow)--no-recommend-shallow[ignore recommended shallow setting]' \
+                '--reference[reference repository]:repository:_directories' \
+                '--recursive[recurse into nested submodules]' \
+                '(--single-branch --no-single-branch)--single-branch[clone one branch]' \
+                '(--single-branch --no-single-branch)--no-single-branch[clone all branches]' \
+                '*:submodule path:->submodules'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
+            ;;
+        deinit)
+            _arguments \
+                '(-f --force)'{-f,--force}'[remove local changes]' \
+                '--all[deinitialize every submodule]' \
+                '*:submodule path:->submodules'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
+            ;;
+        foreach)
+            _arguments '--recursive[recurse into nested submodules]' '*:command:'
+            ;;
+        summary)
+            _arguments \
+                '(--cached --files)--cached[compare the index with the commit]' \
+                '(--cached --files)--files[compare the working tree with the index]' \
+                '--summary-limit[limit the number of commits]:count:' \
+                '*:submodule path:->submodules'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
+            ;;
+        sync)
+            _arguments '--recursive[recurse into nested submodules]' '*:submodule path:->submodules'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
+            ;;
+        set-branch)
+            _arguments \
+                '(--default --branch)--default[remove the configured branch]' \
+                '(--default --branch)--branch[set the tracked branch]:branch:' \
+                '1:submodule path:->submodules'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
+            ;;
+        set-url)
+            _arguments '1:submodule path:->submodules' '2:new URL:'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
+            ;;
+        absorbgitdirs)
+            _arguments '*:submodule path:->submodules'
+            [[ "$state" == "submodules" ]] && _gits_dynamic_paths __complete-submodules root
+            ;;
     esac
 }
 
@@ -950,6 +1185,19 @@ function __gits_no_subcommand
         set -e words[1..2]
     end
     test (count $words) -eq 0
+end
+
+function __gits_complete_dynamic_paths
+    set -l action $argv[1]
+    set -l mode $argv[2]
+    set -l words (commandline -opc)
+    set -l global_args
+    set -e words[1]
+    while test (count $words) -ge 2; and test "$words[1]" = -C
+        set -a global_args -C $words[2]
+        set -e words[1..2]
+    end
+    command gits $global_args $action $mode 2>/dev/null
 end
 
 complete -c gits -f -n __gits_no_subcommand -a init -d 'Initialize submodules'
@@ -970,10 +1218,10 @@ complete -c gits -n __gits_no_subcommand -s C -r -a '(__fish_complete_directorie
 complete -c gits -f -n '__fish_seen_subcommand_from help' -a 'init pull reset add admit config list cleanup status update deinit foreach summary sync set-branch set-url absorbgitdirs help version' -d 'Show command help'
 
 complete -c gits -n '__fish_seen_subcommand_from admit' -l all -d 'Stage every declared submodule'
-complete -c gits -F -n '__fish_seen_subcommand_from admit'
+complete -c gits -f -n '__fish_seen_subcommand_from admit' -a '(__gits_complete_dynamic_paths __complete-changed-paths cwd)' -d 'Changed path'
 
 complete -c gits -n '__fish_seen_subcommand_from pull' -l all -d 'Update every declared submodule'
-complete -c gits -F -n '__fish_seen_subcommand_from pull'
+complete -c gits -f -n '__fish_seen_subcommand_from pull' -a '(__gits_complete_dynamic_paths __complete-submodules root)' -d 'Submodule'
 
 complete -c gits -n '__fish_seen_subcommand_from cleanup' -l apply -d 'Delete mirrors unused for at least 30 days'
 complete -c gits -n '__fish_seen_subcommand_from cleanup' -l dry-run -d 'Preview without deleting mirrors'
@@ -983,7 +1231,7 @@ complete -c gits -n '__fish_seen_subcommand_from cleanup' -l remove -r -a '(__fi
 
 complete -c gits -n '__fish_seen_subcommand_from reset' -l hard -d 'Discard working tree changes'
 complete -c gits -n '__fish_seen_subcommand_from reset' -l all -d 'Reset the repository and every declared submodule'
-complete -c gits -F -n '__fish_seen_subcommand_from reset'
+complete -c gits -f -n '__fish_seen_subcommand_from reset' -a '(__gits_complete_dynamic_paths __complete-submodules root)' -d 'Submodule'
 complete -c gits -n '__fish_seen_subcommand_from config' -l unset -d 'Disable shared mode'
 complete -c gits -F -n '__fish_seen_subcommand_from config init'
 
@@ -997,6 +1245,39 @@ complete -c gits -n '__fish_seen_subcommand_from add' -l depth -r -d 'Create a s
 complete -c gits -n '__fish_seen_subcommand_from add' -l progress -d 'Force progress reporting'
 complete -c gits -n '__fish_seen_subcommand_from add' -l no-progress -d 'Disable progress reporting'
 complete -c gits -F -n '__fish_seen_subcommand_from add'
+
+complete -c gits -n '__fish_seen_subcommand_from status' -s q -l quiet -d 'Suppress progress output'
+complete -c gits -n '__fish_seen_subcommand_from status' -l cached -d 'Use the commit recorded in the index'
+complete -c gits -n '__fish_seen_subcommand_from status' -l recursive -d 'Recurse into nested submodules'
+complete -c gits -f -n '__fish_seen_subcommand_from status' -a '(__gits_complete_dynamic_paths __complete-submodules root)' -d 'Submodule'
+
+complete -c gits -n '__fish_seen_subcommand_from update' -l init -d 'Initialize unregistered submodules'
+complete -c gits -n '__fish_seen_subcommand_from update' -l filter -r -d 'Apply a partial clone filter'
+complete -c gits -n '__fish_seen_subcommand_from update' -l remote -d 'Use the remote tracking branch'
+complete -c gits -n '__fish_seen_subcommand_from update' -s N -l no-fetch -d 'Do not fetch new objects'
+complete -c gits -n '__fish_seen_subcommand_from update' -s f -l force -d 'Force checkout updates'
+complete -c gits -n '__fish_seen_subcommand_from update' -l checkout -d 'Checkout recorded commits'
+complete -c gits -n '__fish_seen_subcommand_from update' -l merge -d 'Merge recorded commits'
+complete -c gits -n '__fish_seen_subcommand_from update' -l rebase -d 'Rebase onto recorded commits'
+complete -c gits -n '__fish_seen_subcommand_from update' -l recommend-shallow -d 'Use recommended shallow setting'
+complete -c gits -n '__fish_seen_subcommand_from update' -l no-recommend-shallow -d 'Ignore recommended shallow setting'
+complete -c gits -n '__fish_seen_subcommand_from update' -l reference -r -a '(__fish_complete_directories)' -d 'Reference repository'
+complete -c gits -n '__fish_seen_subcommand_from update' -l recursive -d 'Recurse into nested submodules'
+complete -c gits -n '__fish_seen_subcommand_from update' -l single-branch -d 'Clone one branch'
+complete -c gits -n '__fish_seen_subcommand_from update' -l no-single-branch -d 'Clone all branches'
+complete -c gits -f -n '__fish_seen_subcommand_from update' -a '(__gits_complete_dynamic_paths __complete-submodules root)' -d 'Submodule'
+
+complete -c gits -n '__fish_seen_subcommand_from deinit' -s f -l force -d 'Remove local changes'
+complete -c gits -n '__fish_seen_subcommand_from deinit' -l all -d 'Deinitialize every submodule'
+complete -c gits -f -n '__fish_seen_subcommand_from deinit' -a '(__gits_complete_dynamic_paths __complete-submodules root)' -d 'Submodule'
+
+complete -c gits -n '__fish_seen_subcommand_from foreach sync' -l recursive -d 'Recurse into nested submodules'
+complete -c gits -n '__fish_seen_subcommand_from summary' -l cached -d 'Compare the index with the commit'
+complete -c gits -n '__fish_seen_subcommand_from summary' -l files -d 'Compare the working tree with the index'
+complete -c gits -n '__fish_seen_subcommand_from summary' -l summary-limit -r -d 'Limit the number of commits'
+complete -c gits -n '__fish_seen_subcommand_from set-branch' -l default -d 'Remove the configured branch'
+complete -c gits -n '__fish_seen_subcommand_from set-branch' -l branch -r -d 'Set the tracked branch'
+complete -c gits -f -n '__fish_seen_subcommand_from summary sync set-branch set-url absorbgitdirs' -a '(__gits_complete_dynamic_paths __complete-submodules root)' -d 'Submodule'
 
 EOF
             ;;
@@ -2479,6 +2760,32 @@ main() {
             }
             completion_script "$2"
             return $?
+            ;;
+        __complete-submodules)
+            [ "$#" -eq 2 ] || return 0
+            case "$2" in
+                root|cwd)
+                    ;;
+                *)
+                    return 0
+                    ;;
+            esac
+            command -v git >/dev/null 2>&1 || return 0
+            completion_submodule_paths "$2"
+            return 0
+            ;;
+        __complete-changed-paths)
+            [ "$#" -eq 2 ] || return 0
+            case "$2" in
+                root|cwd)
+                    ;;
+                *)
+                    return 0
+                    ;;
+            esac
+            command -v git >/dev/null 2>&1 || return 0
+            completion_changed_paths "$2"
+            return 0
             ;;
     esac
 

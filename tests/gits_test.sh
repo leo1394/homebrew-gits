@@ -220,6 +220,28 @@ ci_workflow=$(<"$ROOT/.github/workflows/ci.yml")
 assert_contains "$ci_workflow" 'run: bash -n bin/gits install.sh tests/gits_test.sh'
 assert_contains "$ci_workflow" 'run: brew style Formula/gits.rb install.sh'
 
+completion_project="$TEST_ROOT/completion project"
+mkdir -p "$completion_project/modules"
+git -C "$completion_project" init -q
+git config --file "$completion_project/.gitmodules" submodule.scripts.path scripts
+git config --file "$completion_project/.gitmodules" submodule.scripts.url ../build-scripts.git
+git config --file "$completion_project/.gitmodules" submodule.shared.path modules/shared
+git config --file "$completion_project/.gitmodules" submodule.shared.url ../shared.git
+git config --file "$completion_project/.gitmodules" submodule.spaced.path "space module"
+git config --file "$completion_project/.gitmodules" submodule.spaced.url ../spaced.git
+touch "$completion_project/source.txt"
+git -C "$completion_project" add .gitmodules source.txt
+git -C "$completion_project" commit -qm "completion base"
+completion_base_commit=$(git -C "$completion_project" rev-parse HEAD)
+git -C "$completion_project" update-index --add --cacheinfo "160000,$completion_base_commit,scripts"
+git -C "$completion_project" update-index --add --cacheinfo "160000,$completion_base_commit,modules/shared"
+git -C "$completion_project" commit -qm "add completion gitlinks"
+completion_changed_commit=$(git -C "$completion_project" rev-parse HEAD)
+git -C "$completion_project" update-index --cacheinfo "160000,$completion_changed_commit,scripts"
+git -C "$completion_project" update-index --cacheinfo "160000,$completion_changed_commit,modules/shared"
+touch "$completion_project/feature.txt"
+mkdir -p "$HOME/Code"
+
 bash_completion_file="$TEST_ROOT/gits.bash"
 zsh_completion_file="$TEST_ROOT/_gits"
 fish_completion_file="$TEST_ROOT/gits.fish"
@@ -239,13 +261,18 @@ fi
 if command -v fish >/dev/null 2>&1; then
     fish -n "$fish_completion_file"
 fi
-assert_contains "$(cat "$bash_completion_file")" "complete -F _gits gits"
+assert_contains "$(cat "$bash_completion_file")" "complete -o filenames -F _gits gits"
+assert_contains "$(cat "$bash_completion_file")" "__complete-changed-paths"
 assert_contains "$(cat "$zsh_completion_file")" "compdef _gits gits"
 assert_contains "$(cat "$zsh_completion_file")" "'admit:stage changes"
 assert_contains "$(cat "$zsh_completion_file")" "'cleanup:remove or preview"
 assert_contains "$(cat "$zsh_completion_file")" "'version:show the installed version'"
 assert_contains "$(cat "$zsh_completion_file")" "'-C:run as if gits was started in a directory'"
-assert_contains "$(cat "$zsh_completion_file")" 'case "$words[$command_index]"'
+assert_contains "$(cat "$zsh_completion_file")" 'case "$subcommand"'
+assert_contains "$(cat "$zsh_completion_file")" 'words=("${(@)words[$command_index,-1]}")'
+assert_contains "$(cat "$zsh_completion_file")" '__complete-submodules'
+assert_contains "$(cat "$zsh_completion_file")" '__complete-changed-paths'
+assert_contains "$(cat "$zsh_completion_file")" 'update)'
 assert_not_contains "$(cat "$zsh_completion_file")" "'commit:"
 assert_not_contains "$(cat "$zsh_completion_file")" "'completion:"
 assert_contains "$(cat "$fish_completion_file")" "complete -c gits"
@@ -254,8 +281,98 @@ assert_contains "$(cat "$fish_completion_file")" "-a cleanup"
 assert_contains "$(cat "$fish_completion_file")" "-a version"
 assert_contains "$(cat "$fish_completion_file")" "-s C"
 assert_contains "$(cat "$fish_completion_file")" "__fish_seen_subcommand_from help"
+assert_contains "$(cat "$fish_completion_file")" "__gits_complete_dynamic_paths"
+assert_contains "$(cat "$fish_completion_file")" "__complete-changed-paths"
+assert_contains "$(cat "$fish_completion_file")" "__fish_seen_subcommand_from update"
 assert_not_contains "$(cat "$fish_completion_file")" "-a commit"
 assert_not_contains "$(cat "$fish_completion_file")" "-a completion"
+
+bash_admit_submodule_completion=$(cd "$completion_project" && PATH="$ROOT/bin:$PATH" /bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits admit scri)
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_equals "$bash_admit_submodule_completion" "scripts"
+
+bash_admit_clean_submodule_completion=$(cd "$completion_project" && PATH="$ROOT/bin:$PATH" /bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits admit spa)
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_equals "$bash_admit_clean_submodule_completion" ""
+
+bash_admit_changed_file_completion=$(cd "$completion_project" && PATH="$ROOT/bin:$PATH" /bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits admit fea)
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_equals "$bash_admit_changed_file_completion" "feature.txt"
+
+bash_pull_submodule_completion=$(cd "$outside_git" && PATH="$ROOT/bin:$PATH" /bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits -C "$2" pull modules/s)
+    COMP_CWORD=4
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file" "$completion_project")
+assert_equals "$bash_pull_submodule_completion" "modules/shared"
+
+bash_spaced_submodule_completion=$(cd "$completion_project" && PATH="$ROOT/bin:$PATH" /bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits pull spa)
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_equals "$bash_spaced_submodule_completion" "space module"
+
+bash_init_tilde_completion=$(/bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits init "~/Co")
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_contains "$bash_init_tilde_completion" "~/Code"
+
+bash_update_action_completion=$(/bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits update --re)
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_contains "$bash_update_action_completion" "--remote"
+assert_contains "$bash_update_action_completion" "--recursive"
+assert_contains "$bash_update_action_completion" "--recommend-shallow"
+
+bash_submodule_command_completions=$(cd "$completion_project" && PATH="$ROOT/bin:$PATH" /bin/bash -c '
+    source "$1"
+    for command in pull reset status update deinit summary sync set-branch set-url absorbgitdirs; do
+        COMP_WORDS=(gits "$command" scri)
+        COMP_CWORD=2
+        _gits
+        printf "%s:%s\n" "$command" "${COMPREPLY[*]}"
+    done
+' _ "$bash_completion_file")
+for command in pull reset status update deinit summary sync set-branch set-url absorbgitdirs; do
+    assert_contains "$bash_submodule_command_completions" "$command:scripts"
+done
+
+bash_nested_admit_completion=$(cd "$completion_project/modules" && PATH="$ROOT/bin:$PATH" /bin/bash -c '
+    source "$1"
+    COMP_WORDS=(gits admit sh)
+    COMP_CWORD=2
+    _gits
+    printf "%s" "${COMPREPLY[*]}"
+' _ "$bash_completion_file")
+assert_equals "$bash_nested_admit_completion" "shared"
 
 bash_adm_completion=$(/bin/bash -c '
     source "$1"
