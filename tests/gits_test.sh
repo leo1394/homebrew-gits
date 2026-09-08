@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-expected_version_output=$'gits version 0.2.20 (2026-09-01)\nhttps://github.com/leo1394/homebrew-gits'
+expected_version_output=$'gits version 0.2.21 (2026-09-08)\nhttps://github.com/leo1394/homebrew-gits'
 assert_equals "$("$GITS" --version)" "$expected_version_output"
 assert_equals "$("$GITS" -v)" "$expected_version_output"
 assert_equals "$("$GITS" version)" "$expected_version_output"
