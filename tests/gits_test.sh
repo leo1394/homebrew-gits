@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-expected_version_output=$'gits version 0.2.21 (2026-09-08)\nhttps://github.com/leo1394/homebrew-gits'
+expected_version_output=$'gits version 0.2.22 (2026-09-15)\nhttps://github.com/leo1394/homebrew-gits'
 assert_equals "$("$GITS" --version)" "$expected_version_output"
 assert_equals "$("$GITS" -v)" "$expected_version_output"
 assert_equals "$("$GITS" version)" "$expected_version_output"
@@ -1128,12 +1128,14 @@ rmdir "$CLEAN_SHARED/.gits/lock"
 EDITOR_ACCEPT="$TEST_ROOT/editor-accept"
 EDITOR_CANCEL="$TEST_ROOT/editor-cancel"
 EDITOR_SUPPLEMENT="$TEST_ROOT/editor-supplement"
+EDITOR_SAVE_NONZERO="$TEST_ROOT/editor-save-nonzero"
 EDITOR_INTERRUPT="$TEST_ROOT/editor-interrupt"
 printf '%s\n' '#!/bin/sh' 'touch "$1"' 'exit 0' > "$EDITOR_ACCEPT"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$EDITOR_CANCEL"
 printf '%s\n' '#!/bin/sh' 'first=$(sed -n "1p" "$1")' 'printf "%s custom detail\n" "$first" > "$1"' > "$EDITOR_SUPPLEMENT"
+printf '%s\n' '#!/bin/sh' 'printf "feat: 保存成功但编辑器返回非零状态\n\n详细说明。\n" > "$1"' 'touch -t 200001010000 "$1"' 'exit 1' > "$EDITOR_SAVE_NONZERO"
 printf '%s\n' '#!/bin/sh' 'kill -INT "$PPID"' 'exit 130' > "$EDITOR_INTERRUPT"
-chmod +x "$EDITOR_ACCEPT" "$EDITOR_CANCEL" "$EDITOR_SUPPLEMENT" "$EDITOR_INTERRUPT"
+chmod +x "$EDITOR_ACCEPT" "$EDITOR_CANCEL" "$EDITOR_SUPPLEMENT" "$EDITOR_SAVE_NONZERO" "$EDITOR_INTERRUPT"
 
 mkdir "$TEST_ROOT/add-project"
 git -C "$TEST_ROOT/add-project" init -q
@@ -1213,6 +1215,14 @@ echo "custom update" >> "$TEST_ROOT/add-project/root.txt"
     GIT_EDITOR="$EDITOR_SUPPLEMENT" "$GITS" admit root.txt >/dev/null
 )
 assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "feat: custom detail"
+
+echo "saved editor update" >> "$TEST_ROOT/add-project/root.txt"
+(
+    cd "$TEST_ROOT/add-project"
+    GIT_EDITOR="$EDITOR_SAVE_NONZERO" "$GITS" admit root.txt >/dev/null
+)
+assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" \
+    "feat: 保存成功但编辑器返回非零状态"
 
 advance_submodule "resolve unmerged submodules"
 git -C "$TEST_ROOT/add-project/scripts" pull -q --ff-only
