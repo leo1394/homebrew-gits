@@ -16,9 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Check shell syntax
-        run: bash -n bin/gits install.sh tests/gits_test.sh
+        run: bash -n bin/gits install.sh tests/gits_test.sh tests/gits_commit_graph_test.sh
       - name: Run tests
         run: bash tests/gits_test.sh
+      - name: Test alternate commit-graph invalidation
+        run: bash tests/gits_commit_graph_test.sh
 
   homebrew:
     runs-on: macos-latest

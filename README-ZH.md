@@ -43,6 +43,7 @@ Git 子模块存储。
 - 父仓库 pull 使用 `--ff-only --no-recurse-submodules`。
 - 已初始化的子模块保持当前分支，只向配置的 upstream 快进。
 - 共享 init、pull 和 cleanup 共用一把中央锁。
+- alternate 对象路径变化时清理子模块的 commit-graph 缓存；路径未变化时保留缓存。
 - Cleanup 只删除完整的闲置 bare mirror，不删除被借用的单个对象。
 - 扫描根缺失、alternate 无效、出现符号链接或未知条目、mirror 无法确认时，
   cleanup 会在删除前终止。
@@ -93,7 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/instal
 再次执行同一命令即可升级。也可以指定版本或安装目录：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.22 bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.23 bash
 curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_INSTALL_DIR=/absolute/bin bash
 ```
 
@@ -186,8 +187,9 @@ gits cleanup
 ## 开发
 
 ```bash
-bash -n bin/gits install.sh tests/gits_test.sh
+bash -n bin/gits install.sh tests/gits_test.sh tests/gits_commit_graph_test.sh
 bash tests/gits_test.sh
+bash tests/gits_commit_graph_test.sh
 ruby -c Formula/gits.rb
 brew style Formula/gits.rb
 ```

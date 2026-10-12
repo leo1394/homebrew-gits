@@ -50,6 +50,8 @@ Projects without that setting continue to use ordinary Git submodule storage.
 - Initialized submodules stay on their current branches and only fast-forward
   to their configured upstreams.
 - Shared init, pull, and cleanup operations use one central lock.
+- Changing alternate object paths discards the submodule's optional commit-graph
+  caches; unchanged paths keep them.
 - Cleanup removes whole unused bare mirrors, never individual borrowed objects.
 - Missing scan roots, invalid alternates, symlinks, unknown entries, or
   unverifiable mirrors stop cleanup before deletion.
@@ -103,7 +105,7 @@ and installs `gits` to `~/.local/bin`. Add that directory to `PATH` if prompted.
 Run the command again to upgrade. To choose a version or destination:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.22 bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.23 bash
 curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_INSTALL_DIR=/absolute/bin bash
 ```
 
@@ -199,8 +201,9 @@ nothing is deleted.
 ## Development
 
 ```bash
-bash -n bin/gits install.sh tests/gits_test.sh
+bash -n bin/gits install.sh tests/gits_test.sh tests/gits_commit_graph_test.sh
 bash tests/gits_test.sh
+bash tests/gits_commit_graph_test.sh
 ruby -c Formula/gits.rb
 brew style Formula/gits.rb
 ```

@@ -1,7 +1,7 @@
 #!/bin/bash
 
-VERSION="0.2.22"
-VERSION_DATE="2026-09-15"
+VERSION="0.2.23"
+VERSION_DATE="2026-10-12"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -1533,6 +1533,16 @@ update_mirror() {
     fi
 }
 
+invalidate_commit_graph() {
+    local checkout="$1"
+    local info
+
+    info=$(git -C "$checkout" -c core.commitGraph=false rev-parse --path-format=absolute --git-path objects/info 2>/dev/null) || return 1
+    # Changing object databases can leave cached commits unavailable. Git rebuilds these optional caches.
+    rm -f "$info/commit-graph" || return 1
+    rm -rf "$info/commit-graphs"
+}
+
 add_alternate() {
     local checkout="$1"
     local mirror="$2"
@@ -1572,6 +1582,15 @@ add_alternate() {
     if [ "$found" != "true" ]; then
         printf '%s\n' "$objects" >> "$temp" || return 1
     fi
+    if [ -f "$alternates" ] && cmp -s "$temp" "$alternates"; then
+        rm -f "$temp"
+        return 0
+    fi
+    if ! invalidate_commit_graph "$checkout"; then
+        rm -f "$temp"
+        error "could not invalidate commit-graph before updating alternates: $checkout"
+        return 1
+    fi
     mv "$temp" "$alternates"
 }
 
@@ -1602,6 +1621,15 @@ remove_alternate() {
         esac
     done < "$alternates"
 
+    if cmp -s "$temp" "$alternates"; then
+        rm -f "$temp"
+        return 0
+    fi
+    if ! invalidate_commit_graph "$checkout"; then
+        rm -f "$temp"
+        error "could not invalidate commit-graph before removing alternates: $checkout"
+        return 1
+    fi
     if [ -s "$temp" ]; then
         mv "$temp" "$alternates"
     else
