@@ -94,7 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/instal
 再次执行同一命令即可升级。也可以指定版本或安装目录：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.23 bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.24 bash
 curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_INSTALL_DIR=/absolute/bin bash
 ```
 

@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-expected_version_output=$'gits version 0.2.23 (2026-10-12)\nhttps://github.com/leo1394/homebrew-gits'
+expected_version_output=$'gits version 0.2.24 (2026-10-13)\nhttps://github.com/leo1394/homebrew-gits'
 assert_equals "$("$GITS" --version)" "$expected_version_output"
 assert_equals "$("$GITS" -v)" "$expected_version_output"
 assert_equals "$("$GITS" version)" "$expected_version_output"
@@ -1159,6 +1159,20 @@ git -C "$TEST_ROOT/add-project/scripts" pull -q --ff-only
     GIT_EDITOR="$EDITOR_ACCEPT" "$GITS" admit scripts/ >/dev/null
 )
 assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "update submodule: scripts"
+
+advance_submodule "update scripts with a separately staged file"
+git -C "$TEST_ROOT/add-project/scripts" pull -q --ff-only
+echo "separate staged file" > "$TEST_ROOT/add-project/a.txt"
+git -C "$TEST_ROOT/add-project" add a.txt
+(
+    cd "$TEST_ROOT/add-project"
+    GIT_EDITOR="$EDITOR_ACCEPT" "$GITS" admit scripts >/dev/null
+)
+assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "update submodule: scripts"
+assert_equals "$(git -C "$TEST_ROOT/add-project" diff-tree --no-commit-id --name-only -r HEAD)" "scripts"
+assert_equals "$(git -C "$TEST_ROOT/add-project" diff --cached --name-only)" "a.txt"
+git -C "$TEST_ROOT/add-project" commit -qm "edge condition test"
+assert_equals "$(git -C "$TEST_ROOT/add-project" log -1 --pretty=%s)" "edge condition test"
 
 advance_submodule "update scripts and android"
 git -C "$TEST_ROOT/add-project/scripts" pull -q --ff-only

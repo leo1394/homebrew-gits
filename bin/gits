@@ -1,7 +1,7 @@
 #!/bin/bash
 
-VERSION="0.2.23"
-VERSION_DATE="2026-10-12"
+VERSION="0.2.24"
+VERSION_DATE="2026-10-13"
 CONFIG_KEY="gits.sharedSubmodules"
 CLEAN_GRACE_SECONDS=2592000
 RED=$'\033[1;31m'
@@ -157,7 +157,8 @@ usage:
 
 Stage selected paths, open the Git-configured editor with a context-aware
 default message, and create a commit. --all selects every submodule declared in
-.gitmodules; it does not stage unrelated files.
+.gitmodules. Previously staged unrelated paths remain staged for a later commit.
+During a merge, Git commits the complete resolved index.
 
 If message editing or commit creation is cancelled, gits restores the index to
 its pre-command state. Exiting the editor without saving also cancels the
@@ -494,7 +495,7 @@ Pass remaining arguments to
 .TP
 .B admit path...
 Stage selected paths, open the Git-configured editor with a context-aware
-default message, and create a commit.
+default message, and commit only those paths outside a merge.
 .TP
 .B admit --all
 Stage every submodule declared in
@@ -632,12 +633,14 @@ Updated gitlinks remain visible as superproject changes until committed.
 Before opening the editor,
 .B admit
 saves the current index and stages the requested paths.
-If the staged changes contain only submodule entries, the initial message is
+If the selected staged changes contain only submodule entries,
+the initial message is
 .BR "update submodule: paths" .
 If regular files are included, the initial message is
 .BR "feat:" .
 .PP
-Changes already staged before the command remain part of the commit.
+Outside a merge, changes staged for unrelated paths remain staged for a later
+commit. During a merge, Git commits the complete resolved index.
 If editing is interrupted, the message is empty, unresolved paths remain, or
 commit creation fails, gits restores the index to its pre-command state.
 Exiting the editor without saving the message also restores the index, even
@@ -2033,6 +2036,7 @@ restore_index() {
 
 default_commit_message() {
     local root="$1"
+    local add_directory="${2:-$root}"
     local path
     local key
     local submodule_path
@@ -2042,9 +2046,16 @@ default_commit_message() {
     local -a staged_paths=()
     local -a staged_submodules=()
 
-    while IFS= read -r -d '' path; do
-        staged_paths+=("$path")
-    done < <(git -C "$root" diff --cached --name-only -z)
+    if [ "$#" -gt 2 ]; then
+        shift 2
+        while IFS= read -r -d '' path; do
+            staged_paths+=("$path")
+        done < <(git -C "$add_directory" diff --cached --name-only -z -- "$@")
+    else
+        while IFS= read -r -d '' path; do
+            staged_paths+=("$path")
+        done < <(git -C "$root" diff --cached --name-only -z)
+    fi
 
     [ "${#staged_paths[@]}" -gt 0 ] || return 1
 
@@ -2099,10 +2110,12 @@ admit_paths() {
     local editor
     local editor_wrapper=""
     local status
+    local commit_scope="selected"
     local key
     local path
     local requested
     local -a paths=()
+    local -a commit_args=()
 
     [ "$#" -gt 0 ] || {
         error "admit requires at least one path or --all"
@@ -2176,7 +2189,13 @@ admit_paths() {
         return 1
     fi
 
-    default_message=$(default_commit_message "$root") || {
+    if [ -f "$(git -C "$root" rev-parse --git-path MERGE_HEAD)" ]; then
+        default_message=$(default_commit_message "$root")
+        commit_scope="index"
+    else
+        default_message=$(default_commit_message "$root" "$add_directory" "${paths[@]}")
+    fi
+    [ -n "$default_message" ] || {
         restore_index "$index_path" "$backup" "$had_index"
         rm -f "$backup"
         trap - INT TERM HUP
@@ -2227,7 +2246,12 @@ admit_paths() {
         trap - INT TERM HUP
         return 1
     }
-    GITS_ADMIT_EDITOR="$editor" GIT_EDITOR="$editor_wrapper" git -C "$root" commit --edit -m "$default_message" || {
+    if [ "$commit_scope" = "selected" ]; then
+        commit_args=(commit --only --edit -m "$default_message" -- "${paths[@]}")
+    else
+        commit_args=(commit --edit -m "$default_message")
+    fi
+    GITS_ADMIT_EDITOR="$editor" GIT_EDITOR="$editor_wrapper" git -C "$add_directory" "${commit_args[@]}" || {
         status=$?
         restore_index "$index_path" "$backup" "$had_index"
         rm -f "$backup" "$editor_wrapper"
