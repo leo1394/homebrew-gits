@@ -105,7 +105,7 @@ and installs `gits` to `~/.local/bin`. Add that directory to `PATH` if prompted.
 Run the command again to upgrade. To choose a version or destination:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.24 bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.25 bash
 curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_INSTALL_DIR=/absolute/bin bash
 ```
 
@@ -213,3 +213,7 @@ See [RELEASING.md](RELEASING.md) for the release procedure.
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+Shared lock recovery: run `gits unlock` to remove a stale lock, or
+`gits unlock --terminate <PID>` to terminate the recorded gits owner and release its lock.
+Run from a project configured to use that shared repository.

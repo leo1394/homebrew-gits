@@ -68,7 +68,7 @@ git config --global user.email "gits@example.invalid"
 git config --global init.defaultBranch main
 git config --global protocol.file.allow always
 
-expected_version_output=$'gits version 0.2.24 (2026-10-13)\nhttps://github.com/leo1394/homebrew-gits'
+expected_version_output=$'gits version 0.2.25 (2026-11-10)\nhttps://github.com/leo1394/homebrew-gits'
 assert_equals "$("$GITS" --version)" "$expected_version_output"
 assert_equals "$("$GITS" -v)" "$expected_version_output"
 assert_equals "$("$GITS" version)" "$expected_version_output"
@@ -1053,6 +1053,19 @@ lock_output=$(
 )
 assert_contains "$lock_output" "shared modules repository is locked"
 rmdir "$CLEAN_SHARED/.gits/lock"
+mkdir "$CLEAN_SHARED/.gits/lock"
+printf '%s\n' 99999999 > "$CLEAN_SHARED/.gits/lock/pid"
+unlock_output=$(cd "$CLEAN_PROJECT" && "$GITS" unlock)
+assert_contains "$unlock_output" "Released shared lock"
+[ ! -d "$CLEAN_SHARED/.gits/lock" ] || fail "stale lock retained"
+mkdir "$CLEAN_SHARED/.gits/lock"
+printf '%s\n' "$$" > "$CLEAN_SHARED/.gits/lock/pid"
+unlock_output=$(cd "$CLEAN_PROJECT" && "$GITS" unlock 2>&1 || true)
+assert_contains "$unlock_output" "lock owner is running"
+[ -d "$CLEAN_SHARED/.gits/lock" ] || fail "live lock removed"
+rm "$CLEAN_SHARED/.gits/lock/pid"
+rmdir "$CLEAN_SHARED/.gits/lock"
+
 
 CLEAN_NEW_MIRROR="$CLEAN_SHARED/repositories/new-candidate.git"
 git init --bare -q "$CLEAN_NEW_MIRROR"

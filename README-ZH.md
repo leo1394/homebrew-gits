@@ -94,7 +94,7 @@ curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/instal
 再次执行同一命令即可升级。也可以指定版本或安装目录：
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.24 bash
+curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_VERSION=0.2.25 bash
 curl -fsSL https://raw.githubusercontent.com/leo1394/homebrew-gits/master/install.sh | GITS_INSTALL_DIR=/absolute/bin bash
 ```
 
@@ -199,3 +199,7 @@ brew style Formula/gits.rb
 ## License
 
 MIT，见 [LICENSE](LICENSE)。
+
+共享锁恢复：使用 `gits unlock` 清理已退出进程留下的锁，或使用
+`gits unlock --terminate <PID>` 终止锁中记录的 gits 进程并释放锁。
+请在配置了该共享仓库的项目目录执行。
